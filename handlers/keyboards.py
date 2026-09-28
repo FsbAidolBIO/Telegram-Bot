@@ -80,9 +80,10 @@ def get_theme_editor_keyboard(
         if len(color_buttons) > 2:
             keyboard.append(color_buttons[2:4])
 
-    # Row 5: Open full color picker
+    # Row 5: Palette Picker & Palette Card
     keyboard.append([
-        InlineKeyboardButton(text="🎨 Открыть все цвета палитры", callback_data="open_palette_picker")
+        InlineKeyboardButton(text="🎨 Все цвета палитры", callback_data="open_palette_picker"),
+        InlineKeyboardButton(text="📊 Карточка палитры (PNG)", callback_data="download_palette_card")
     ])
 
     # Row 6: Primary download buttons
@@ -111,7 +112,7 @@ def get_color_picker_keyboard(extracted_colors: List[ExtractedColor], active_idx
     for i, col in enumerate(extracted_colors):
         is_active = (active_idx == i)
         prefix = "🎯 " if is_active else ""
-        btn_text = f"{col.emoji} {prefix}{col.hex.upper()}"
+        btn_text = f"{col.emoji} {prefix}{col.hex.upper()} ({col.name})"
         row.append(InlineKeyboardButton(text=btn_text, callback_data=f"set_accent_{i}"))
         if len(row) == 2:
             buttons.append(row)

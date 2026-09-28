@@ -1,6 +1,6 @@
 """
 Color extraction module for Telegram themes.
-Extracts dominant colors, vibrant accents, and creates harmonious color schemes.
+Extracts dominant colors, vibrant accents, harmonic color schemes, and human-friendly color names.
 """
 
 from typing import List, Tuple, Dict, Any, Optional
@@ -65,6 +65,34 @@ def get_color_emoji(rgb: Tuple[int, int, int]) -> str:
         return "🌸"
 
 
+def get_color_name(rgb: Tuple[int, int, int]) -> str:
+    """Return a poetic Russian color name for swatches and palette cards."""
+    h, l, s = colorsys.rgb_to_hls(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+    if s < 0.14:
+        if l > 0.82:
+            return "Жемчужно-белый"
+        if l < 0.22:
+            return "Глубокий чёрный"
+        return "Графитовый серый"
+    deg = h * 360.0
+    if deg < 18 or deg >= 345:
+        return "Рубиновый" if l < 0.4 else ("Алый неон" if l < 0.7 else "Коралловый")
+    elif deg < 45:
+        return "Янтарный" if l < 0.4 else ("Оранжевый" if l < 0.7 else "Персиковый")
+    elif deg < 72:
+        return "Золотистый" if l < 0.4 else ("Солнечный" if l < 0.7 else "Лимонный")
+    elif deg < 160:
+        return "Изумрудный" if l < 0.4 else ("Неоново-зелёный" if l < 0.7 else "Мятный")
+    elif deg < 200:
+        return "Морская волна" if l < 0.4 else ("Лазурный" if l < 0.7 else "Аквамарин")
+    elif deg < 260:
+        return "Кобальтовый" if l < 0.4 else ("Сапфировый" if l < 0.7 else "Небесно-голубой")
+    elif deg < 315:
+        return "Аметистовый" if l < 0.4 else ("Пурпурный" if l < 0.7 else "Лавандовый")
+    else:
+        return "Малиновый" if l < 0.5 else "Неоново-розовый"
+
+
 def get_luminance(r: int, g: int, b: int) -> float:
     """Calculate relative perceived luminance (0.0 to 1.0)."""
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
@@ -118,6 +146,24 @@ def adjust_saturation(rgb: Tuple[int, int, int], factor: float) -> Tuple[int, in
     return (int(nr * 255), int(ng * 255), int(nb * 255))
 
 
+def shift_temperature(rgb: Tuple[int, int, int], kelvin_shift: float) -> Tuple[int, int, int]:
+    """
+    Shift color temperature: positive = warmer (amber/red), negative = cooler (cyan/blue).
+    kelvin_shift: -0.3 to +0.3
+    """
+    r, g, b = rgb
+    if kelvin_shift > 0:
+        r = min(255, int(r + 255 * kelvin_shift * 0.4))
+        g = min(255, int(g + 255 * kelvin_shift * 0.2))
+        b = max(0, int(b - 255 * kelvin_shift * 0.3))
+    else:
+        shift = abs(kelvin_shift)
+        r = max(0, int(r - 255 * shift * 0.3))
+        g = min(255, int(g + 255 * shift * 0.1))
+        b = min(255, int(b + 255 * shift * 0.4))
+    return (r, g, b)
+
+
 def generate_harmonic_color(base_rgb: Tuple[int, int, int], hue_shift_degrees: float) -> Tuple[int, int, int]:
     """Generate a harmonic color by shifting hue."""
     h, l, s = colorsys.rgb_to_hls(base_rgb[0] / 255.0, base_rgb[1] / 255.0, base_rgb[2] / 255.0)
@@ -140,6 +186,7 @@ class ExtractedColor:
         self.h, self.l, self.s = colorsys.rgb_to_hls(self.r / 255.0, self.g / 255.0, self.b / 255.0)
         self.luminance = get_luminance(self.r, self.g, self.b)
         self.emoji = get_color_emoji(self.rgb)
+        self.name = get_color_name(self.rgb)
         
         # Vibrancy score: high saturation + moderate lightness is most vibrant
         lightness_penalty = abs(self.l - 0.5) * 1.5
@@ -150,6 +197,7 @@ class ExtractedColor:
             "hex": self.hex,
             "rgb": [self.r, self.g, self.b],
             "emoji": self.emoji,
+            "name": self.name,
             "vibrancy": round(self.vibrancy, 3),
             "luminance": round(self.luminance, 3),
             "count": self.count
@@ -164,7 +212,6 @@ def extract_palette_from_image(image: Image.Image, num_colors: int = 8) -> List[
     thumb = image.convert("RGB")
     thumb.thumbnail((250, 250), Image.Resampling.BILINEAR)
     
-    # Adaptive quantization
     quantized = thumb.quantize(colors=36, method=Image.Quantize.MEDIANCUT)
     palette_data = quantized.getpalette()[: 36 * 3]
     color_counts = quantized.getcolors() or []
@@ -180,13 +227,9 @@ def extract_palette_from_image(image: Image.Image, num_colors: int = 8) -> List[
         default_hexes = ["#2A72D4", "#5EB5F7", "#8E52EA", "#E5484D", "#30A46C", "#F76808", "#1E232A", "#FFFFFF"]
         return [ExtractedColor(hex_to_rgb(h)) for h in default_hexes]
 
-    # Precalculate max count safely
     max_count = max((c.count for c in colors_raw), default=1)
-    
-    # Sort raw colors: prioritize vibrant colors first, followed by frequency
     colors_raw.sort(key=lambda c: (c.vibrancy * 2.0 + (c.count / max_count)), reverse=True)
     
-    # Select distinct colors
     distinct_colors: List[ExtractedColor] = []
     min_distance = 32.0
     
@@ -200,7 +243,6 @@ def extract_palette_from_image(image: Image.Image, num_colors: int = 8) -> List[
             if len(distinct_colors) >= num_colors:
                 break
                 
-    # If we still have room, add secondary colors with lower threshold
     if len(distinct_colors) < num_colors:
         for color in colors_raw:
             if color not in distinct_colors and all(color_distance(color.rgb, s.rgb) >= 20.0 for s in distinct_colors):
@@ -208,7 +250,6 @@ def extract_palette_from_image(image: Image.Image, num_colors: int = 8) -> List[
                 if len(distinct_colors) >= num_colors:
                     break
 
-    # If colors are still too sparse / monochromatic, generate harmonic accents!
     if len(distinct_colors) < 6:
         base_color = distinct_colors[0].rgb
         shifts = [35.0, 75.0, 140.0, 180.0, 215.0, 290.0]

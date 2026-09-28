@@ -4,6 +4,7 @@ Unit tests for the Telegram Theme Engine.
 
 import unittest
 import io
+import json
 from PIL import Image, ImageDraw
 from theme_engine.color_extractor import (
     extract_palette_from_image,
@@ -12,6 +13,8 @@ from theme_engine.color_extractor import (
     hex_to_rgb,
     get_luminance,
     get_best_text_color,
+    get_color_name,
+    shift_temperature,
     ExtractedColor
 )
 from theme_engine.palette import ThemeConfig, build_palette
@@ -19,6 +22,8 @@ from theme_engine.wallpaper_generator import generate_wallpaper, get_wallpaper_j
 from theme_engine.android_generator import generate_android_theme, to_argb_int
 from theme_engine.desktop_generator import generate_desktop_theme, generate_desktop_palette_text
 from theme_engine.preview_generator import render_preview_to_bytes
+from theme_engine.palette_card_generator import generate_palette_card_bytes
+from theme_engine.json_exporter import export_theme_to_json
 from handlers.session_manager import SessionManager
 
 
@@ -34,6 +39,13 @@ class TestThemeEngine(unittest.TestCase):
         self.assertEqual(rgb_to_hex(255, 0, 128), "#ff0080")
         self.assertEqual(hex_to_rgb("#ff0080"), (255, 0, 128))
         self.assertEqual(hex_to_rgb("ff0080"), (255, 0, 128))
+        self.assertTrue(len(get_color_name((0, 200, 255))) > 0)
+
+    def test_temperature_shift(self):
+        warm = shift_temperature((100, 100, 100), 0.2)
+        self.assertGreater(warm[0], 100)
+        cool = shift_temperature((100, 100, 100), -0.2)
+        self.assertGreater(cool[2], 100)
 
     def test_luminance_and_contrast(self):
         lum_white = get_luminance(255, 255, 255)
@@ -82,7 +94,7 @@ class TestThemeEngine(unittest.TestCase):
     def test_android_theme_generator(self):
         colors = extract_palette_from_image(self.img)
         palette = build_palette(colors, ThemeConfig(mode="dark"))
-        wall = generate_wallpaper(self.img, palette, mode="original", width=400, height=600)
+        wall = generate_wallpaper(self.img, palette, mode="original")
         
         attheme_data = generate_android_theme(palette, wall)
         self.assertIn(b"windowBackgroundWhite=", attheme_data)
@@ -94,7 +106,7 @@ class TestThemeEngine(unittest.TestCase):
     def test_desktop_theme_generator(self):
         colors = extract_palette_from_image(self.img)
         palette = build_palette(colors, ThemeConfig(mode="dark"))
-        wall = generate_wallpaper(self.img, palette, mode="original", width=800, height=600)
+        wall = generate_wallpaper(self.img, palette, mode="original")
         
         tdesktop_data = generate_desktop_theme(palette, wall)
         self.assertTrue(tdesktop_data.startswith(b"PK\x03\x04"))
@@ -112,6 +124,18 @@ class TestThemeEngine(unittest.TestCase):
         preview_data = render_preview_to_bytes(palette, wall, colors)
         self.assertGreater(len(preview_data), 1000)
         self.assertTrue(preview_data.startswith(b"\xff\xd8"))
+
+    def test_palette_card_and_json(self):
+        colors = extract_palette_from_image(self.img)
+        palette = build_palette(colors, ThemeConfig(mode="dark"))
+        
+        card_png = generate_palette_card_bytes(palette, colors)
+        self.assertTrue(card_png.startswith(b"\x89PNG\r\n\x1a\n"))
+        
+        json_str = export_theme_to_json(palette, colors)
+        parsed = json.loads(json_str)
+        self.assertIn("theme_colors", parsed)
+        self.assertIn("css_variables", parsed)
 
     def test_session_manager(self):
         sm = SessionManager(ttl_seconds=60)

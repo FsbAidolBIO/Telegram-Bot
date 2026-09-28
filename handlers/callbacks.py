@@ -18,6 +18,8 @@ from theme_engine.preview_generator import render_preview_to_bytes
 from theme_engine.android_generator import generate_android_theme
 from theme_engine.desktop_generator import generate_desktop_theme, generate_desktop_palette_text
 from theme_engine.wallpaper_generator import get_wallpaper_jpeg_bytes
+from theme_engine.palette_card_generator import generate_palette_card_bytes
+from theme_engine.json_exporter import export_theme_to_json
 
 logger = logging.getLogger(__name__)
 router = Router(name="callbacks_router")
@@ -90,8 +92,8 @@ async def cb_open_palette_picker(query: CallbackQuery):
     kb = get_color_picker_keyboard(session.extracted_colors, session.config.accent_idx)
     caption = (
         "🎨 <b>Палитра цветов из вашего изображения:</b>\n\n"
-        "Нажмите на любой цвет ниже, чтобы мгновенно сделать его основным акцентом чата и интерфейса:\n"
-        "💡 <i>(Или отправьте свой HEX-код сообщением в чат, например <code>#FF4500</code>)</i>"
+        "Нажмите на любой цвет ниже, чтобы сделать его основным акцентом интерфейса:\n"
+        "💡 <i>(Или отправьте свой HEX-код сообщением, например <code>#FF4500</code>)</i>"
     )
     try:
         await query.message.edit_caption(caption=caption, parse_mode="HTML", reply_markup=kb)
@@ -180,6 +182,22 @@ async def cb_reset_settings(query: CallbackQuery):
 
 # --- DOWNLOAD HANDLERS ---
 
+@router.callback_query(F.data == "download_palette_card")
+async def cb_download_palette_card(query: CallbackQuery):
+    session = session_manager.get_session(query.from_user.id)
+    if not session:
+        await query.answer("⚠️ Сессия истекла. Отправьте скриншот заново.", show_alert=True)
+        return
+    
+    await query.answer("📊 Генерирую карточку палитры...")
+    palette = session.get_palette()
+    card_png = generate_palette_card_bytes(palette, session.extracted_colors)
+    doc = BufferedInputFile(card_png, filename="Theme_Palette_Card.png")
+    
+    caption = "📊 <b>Дизайнерская карточка палитры (HEX, RGB, названия оттенков) готова!</b>"
+    await query.message.answer_document(doc, caption=caption, parse_mode="HTML", reply_markup=get_quick_download_keyboard())
+
+
 @router.callback_query(F.data == "download_android")
 async def cb_download_android(query: CallbackQuery):
     session = session_manager.get_session(query.from_user.id)
@@ -190,7 +208,6 @@ async def cb_download_android(query: CallbackQuery):
     await query.answer("⏳ Генерирую тему для Android...")
     
     palette = session.get_palette()
-    # Native resolution for 100% sharpness on Android
     wallpaper = session.get_wallpaper()
     attheme_bytes = generate_android_theme(palette, wallpaper, theme_name="Custom Android Theme")
     
@@ -249,6 +266,8 @@ async def cb_download_all_zip(query: CallbackQuery):
     tdesktop_bytes = generate_desktop_theme(palette, wallpaper_native)
     palette_text = generate_desktop_palette_text(palette)
     preview_bytes = render_preview_to_bytes(palette, wallpaper_native, session.extracted_colors)
+    palette_card_bytes = generate_palette_card_bytes(palette, session.extracted_colors)
+    theme_json_str = export_theme_to_json(palette, session.extracted_colors)
     wall_bytes = get_wallpaper_jpeg_bytes(wallpaper_native, quality=98, subsampling=0)
     
     readme_text = (
@@ -264,7 +283,9 @@ async def cb_download_all_zip(query: CallbackQuery):
         "2. Telegram_Desktop.tdesktop-theme - Theme for Telegram Desktop (PC/Mac/Linux).\n"
         "3. colors.tdesktop-palette - Raw desktop color palette definition.\n"
         "4. wallpaper_original.jpg - Full resolution lossless wallpaper.\n"
-        "5. theme_preview.jpg - Visual theme preview and color swatches.\n\n"
+        "5. theme_preview.jpg - Visual theme preview and color swatches.\n"
+        "6. theme_palette_card.png - Hi-res designer color palette sheet.\n"
+        "7. theme_tokens.json - JSON design tokens & CSS variables.\n\n"
         "INSTALLATION:\n"
         "- On Android: Send Telegram_Android.attheme to Saved Messages and click on it.\n"
         "- On PC: Send Telegram_Desktop.tdesktop-theme to Saved Messages and click on it.\n"
@@ -277,6 +298,8 @@ async def cb_download_all_zip(query: CallbackQuery):
         zf.writestr("colors.tdesktop-palette", palette_text.encode("utf-8"))
         zf.writestr("wallpaper_original.jpg", wall_bytes)
         zf.writestr("theme_preview.jpg", preview_bytes)
+        zf.writestr("theme_palette_card.png", palette_card_bytes)
+        zf.writestr("theme_tokens.json", theme_json_str.encode("utf-8"))
         zf.writestr("README.txt", readme_text.encode("utf-8"))
         
     zip_bytes = zip_bio.getvalue()
@@ -289,6 +312,8 @@ async def cb_download_all_zip(query: CallbackQuery):
         "• 💻 Тема для ПК (<code>.tdesktop-theme</code>)\n"
         "• 📄 Цветовая палитра (<code>.tdesktop-palette</code>)\n"
         "• 🖼 HD Обои в оригинальной чёткости (4:4:4)\n"
+        "• 📊 Дизайнерская карточка палитры (PNG)\n"
+        "• ⚡ JSON токены и CSS переменные (JSON)\n"
         "• 🎨 Карточка предпросмотра с HEX-кодами"
     )
     
