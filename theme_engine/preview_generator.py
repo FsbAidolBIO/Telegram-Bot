@@ -12,8 +12,15 @@ from theme_engine.color_extractor import ExtractedColor, rgb_to_hex
 
 
 def get_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
-    """Load a system TrueType font or fallback to default."""
+    """Load bundled TrueType font with full Cyrillic support or system fallback."""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Priority: Bundled fonts inside project
+    bundled_bold = os.path.join(current_dir, "fonts", "DejaVuSans-Bold.ttf")
+    bundled_reg = os.path.join(current_dir, "fonts", "DejaVuSans.ttf")
+    
     font_paths = [
+        bundled_bold if bold else bundled_reg,
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf" if bold else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
         "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf",
@@ -49,7 +56,7 @@ def render_theme_preview(
 ) -> Image.Image:
     """
     Render a high-resolution preview card showing realistic Telegram UI and palette swatches.
-    Guarantees zero aspect-ratio distortion or stretching on wallpaper.
+    Guarantees zero aspect-ratio distortion and sharp Cyrillic text.
     """
     card = Image.new("RGB", (width, height), (20, 22, 28))
     draw = ImageDraw.Draw(card)
@@ -99,7 +106,6 @@ def render_theme_preview(
     dh = 24
     dx = (screen_w - dw) // 2
     dy = 85
-    # Semi-transparent pill
     badge_bg = (30, 30, 35) if palette.mode in ("dark", "amoled") else (220, 225, 230)
     draw_rounded_rect(draw, (dx, dy, dx + dw, dy + dh), radius=12, fill=badge_bg)
     draw.text((dx + 10, dy + 5), date_text, fill=palette.text_secondary, font=font_time)
@@ -205,7 +211,7 @@ def render_preview_to_bytes(
     wallpaper: Image.Image,
     extracted_colors: List[ExtractedColor]
 ) -> bytes:
-    """Render preview card and return as PNG/JPEG bytes."""
+    """Render preview card and return as JPEG bytes."""
     img = render_theme_preview(palette, wallpaper, extracted_colors)
     bio = io.BytesIO()
     img.save(bio, format="JPEG", quality=92, optimize=True)

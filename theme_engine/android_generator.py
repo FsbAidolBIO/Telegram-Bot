@@ -26,20 +26,17 @@ def generate_android_theme(
 ) -> bytes:
     """
     Generate a complete .attheme binary/text file for Telegram Android.
+    Complies with standard Telegram Android format including WPS/WPE wallpaper markers.
     """
     is_dark = palette.mode in ("dark", "amoled")
     
-    # Helper to calculate color integer
     def c(rgb: Tuple[int, int, int], a: int = 255) -> int:
         return to_argb_int(rgb, a)
 
-    # Derived colors
     divider_color = palette.separator_line
     active_overlay = (255, 255, 255) if is_dark else (0, 0, 0)
     ripple_color = c(active_overlay, 30)
-    selected_bg = c(blend_colors(palette.bg_surface, palette.primary_accent, 0.15))
     
-    # Bubble timestamps & checks
     in_time = palette.in_bubble_time
     out_time = palette.out_bubble_time
 
@@ -91,9 +88,6 @@ def generate_android_theme(
         "chats_menuTopBackground": c(palette.bg_elevated),
         "chats_menuName": c(palette.text_primary),
         "chats_menuPhone": c(palette.text_secondary),
-        
-        # Chat Screen / Background
-        "chat_wallpaper": c(palette.bg_color),
         
         # Incoming Messages
         "chat_inBubble": c(palette.in_bubble_bg),
@@ -162,15 +156,20 @@ def generate_android_theme(
         "avatar_backgroundCyan": c(palette.secondary_accent)
     }
 
+    # If no wallpaper image, add solid chat_wallpaper color
+    if wallpaper_image is None:
+        theme_dict["chat_wallpaper"] = c(palette.bg_color)
+
     # Format into key=value lines
     lines = [f"{key}={val}" for key, val in theme_dict.items()]
     theme_text = "\n".join(lines) + "\n"
     output_bytes = bytearray(theme_text.encode("utf-8"))
 
-    # If wallpaper is present, append WPS marker and JPEG data
+    # If wallpaper is present, enclose JPEG bytes between WPS and WPE markers
     if wallpaper_image is not None:
-        jpg_bytes = get_wallpaper_jpeg_bytes(wallpaper_image)
-        output_bytes.extend(b"WPS\n")
+        jpg_bytes = get_wallpaper_jpeg_bytes(wallpaper_image, quality=92)
+        output_bytes.extend(b"\nWPS\n")
         output_bytes.extend(jpg_bytes)
+        output_bytes.extend(b"\nWPE\n")
 
     return bytes(output_bytes)
