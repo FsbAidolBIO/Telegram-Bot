@@ -19,7 +19,8 @@ def get_theme_editor_keyboard(config: ThemeConfig, palette: ResolvedThemePalette
 
     wallpaper_labels = {
         "blurred": "✨ Размытие",
-        "original": "🖼 Исходник",
+        "fit_blur": "🖼 Вписать (Без обрезки)",
+        "cover": "📐 Заполнить (Cover)",
         "dimmed": "🌑 Затемнение",
         "gradient": "🌈 Градиент",
         "solid": "🎨 Сплошной"

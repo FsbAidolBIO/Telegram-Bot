@@ -24,7 +24,7 @@ class ThemeConfig:
     accent_idx: int = 0             # Index into extracted vibrant colors
     secondary_idx: int = 1          # Index for secondary accent
     bubble_style: str = "accent"    # "accent", "tinted", "contrast", "minimal"
-    wallpaper_mode: str = "blurred" # "blurred", "original", "gradient", "dimmed", "solid"
+    wallpaper_mode: str = "blurred" # "blurred", "fit_blur", "cover", "dimmed", "gradient", "solid"
     brightness_offset: int = 0      # -30 to +30 percent
     contrast_boost: bool = False
     custom_accent_hex: Optional[str] = None
@@ -36,7 +36,7 @@ class ThemeConfig:
         return self.mode
 
     def cycle_wallpaper(self) -> str:
-        wallpapers = ["blurred", "dimmed", "gradient", "original", "solid"]
+        wallpapers = ["blurred", "fit_blur", "cover", "dimmed", "gradient", "solid"]
         next_idx = (wallpapers.index(self.wallpaper_mode) + 1) % len(wallpapers) if self.wallpaper_mode in wallpapers else 0
         self.wallpaper_mode = wallpapers[next_idx]
         return self.wallpaper_mode
@@ -160,7 +160,7 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
     sec_i = (config.accent_idx + 1) % len(vibrant_sorted)
     secondary_raw = vibrant_sorted[sec_i].rgb
 
-    # Base dominant color from image (often first extracted color)
+    # Base dominant color from image
     base_raw = extracted_colors[0].rgb
 
     # Brightness adjustment helper
@@ -175,7 +175,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
         dialogs_bg = (0, 0, 0)
         input_bar_bg = (16, 16, 18)
         
-        # Primary accent should be saturated and bright for OLED pop
         primary_accent = adjust_lightness(primary_raw, min(0.65, max(0.50, get_luminance(*primary_raw))))
         secondary_accent = adjust_lightness(secondary_raw, min(0.65, max(0.50, get_luminance(*secondary_raw))))
         accent_hover = adjust_lightness(primary_accent, min(1.0, get_luminance(*primary_accent) + 0.1))
@@ -212,10 +211,8 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
 
     elif mode == "dark":
         # Deep Modern Dark Theme
-        # Subtle tint of base color into dark background (5% tint)
         tinted_dark = blend_colors((22, 26, 33), base_raw, 0.08)
         
-        # Apply brightness offset
         l_bg = max(0.05, min(0.25, 0.10 + b_offset))
         bg_color = adjust_lightness(tinted_dark, l_bg)
         bg_surface = blend_colors(bg_color, (255, 255, 255), 0.06)
@@ -224,7 +221,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
         dialogs_bg = bg_color
         input_bar_bg = bg_surface
 
-        # Vibrant accents
         primary_accent = adjust_lightness(primary_raw, min(0.68, max(0.52, get_luminance(*primary_raw))))
         secondary_accent = adjust_lightness(secondary_raw, min(0.68, max(0.52, get_luminance(*secondary_raw))))
         accent_hover = adjust_lightness(primary_accent, min(0.9, get_luminance(*primary_accent) + 0.08))
@@ -237,7 +233,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
         input_bar_text = (248, 250, 252)
         input_bar_hint = (130, 140, 155)
 
-        # Bubbles
         if config.bubble_style == "accent":
             out_bubble_bg = primary_accent
             out_bubble_text = get_best_text_color(out_bubble_bg)
@@ -261,7 +256,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
 
     else:
         # Crisp Light Theme
-        # Subtle tint of base color into clean light background
         tinted_light = blend_colors((245, 247, 250), base_raw, 0.05)
         
         l_bg = max(0.90, min(1.0, 0.96 + b_offset))
@@ -272,7 +266,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
         dialogs_bg = (255, 255, 255)
         input_bar_bg = (255, 255, 255)
 
-        # Primary accent: ensure good contrast against white (lightness <= 0.45)
         primary_accent = adjust_lightness(primary_raw, min(0.45, max(0.35, get_luminance(*primary_raw))))
         secondary_accent = adjust_lightness(secondary_raw, min(0.48, max(0.35, get_luminance(*secondary_raw))))
         accent_hover = adjust_lightness(primary_accent, max(0.2, get_luminance(*primary_accent) - 0.08))
@@ -285,7 +278,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
         input_bar_text = (24, 28, 35)
         input_bar_hint = (150, 160, 175)
 
-        # Bubbles
         if config.bubble_style == "accent":
             out_bubble_bg = primary_accent
             out_bubble_text = get_best_text_color(out_bubble_bg)

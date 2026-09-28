@@ -1,13 +1,48 @@
 """
 Wallpaper processing and generation module for Telegram themes.
-Provides original, blurred, gradient, dimmed, and solid wallpaper variants.
+Provides aspect-ratio preserving scaling, anti-stretch protection,
+and multiple background modes (blur, fit with blurred borders, cover, dimmed, gradient, solid).
 """
 
 from typing import Tuple, Optional
 import io
-from PIL import Image, ImageFilter, ImageDraw, ImageEnhance
+from PIL import Image, ImageFilter, ImageDraw, ImageOps
 import numpy as np
 from theme_engine.palette import ResolvedThemePalette
+
+
+def create_fit_with_blurred_backdrop(
+    image: Image.Image,
+    target_width: int,
+    target_height: int,
+    palette: ResolvedThemePalette
+) -> Image.Image:
+    """
+    Fits the original image completely inside (target_width, target_height) without
+    ANY cropping or stretching, and fills the letterbox/pillarbox margins with a
+    Gaussian-blurred and tinted version of the image.
+    """
+    # 1. Create blurred backdrop filling entire canvas
+    backdrop = ImageOps.fit(image, (target_width, target_height), method=Image.Resampling.BILINEAR)
+    backdrop = backdrop.filter(ImageFilter.GaussianBlur(radius=40))
+    
+    # Apply tint to backdrop for cohesion
+    tint_color = palette.bg_color
+    alpha = 0.45 if palette.mode in ("dark", "amoled") else 0.30
+    tint = Image.new("RGB", (target_width, target_height), tint_color)
+    backdrop = Image.blend(backdrop, tint, alpha)
+
+    # 2. Scale original image to fit within canvas preserving 100% aspect ratio
+    fitted = image.copy()
+    fitted.thumbnail((target_width, target_height), Image.Resampling.LANCZOS)
+
+    # 3. Paste centered on backdrop
+    pos_x = (target_width - fitted.width) // 2
+    pos_y = (target_height - fitted.height) // 2
+
+    canvas = backdrop.copy()
+    canvas.paste(fitted, (pos_x, pos_y))
+    return canvas
 
 
 def generate_wallpaper(
@@ -18,52 +53,40 @@ def generate_wallpaper(
     height: int = 1920
 ) -> Image.Image:
     """
-    Generate or process wallpaper image according to selected mode.
-    Returns a PIL Image in RGB format.
+    Generate or process wallpaper image according to selected mode with zero distortion.
+    Returns a PIL Image in RGB format at exact (width, height) without stretching.
     """
     if base_image is None or mode == "solid":
         # Create solid color background
-        img = Image.new("RGB", (width, height), palette.bg_color)
-        return img
+        return Image.new("RGB", (width, height), palette.bg_color)
 
-    # Resize/crop base image to target dimensions (cover aspect ratio)
     img = base_image.convert("RGB")
-    img_ratio = img.width / img.height
-    target_ratio = width / height
 
-    if img_ratio > target_ratio:
-        # Image is wider: crop sides
-        new_width = int(img.height * target_ratio)
-        left = (img.width - new_width) // 2
-        img = img.crop((left, 0, left + new_width, img.height))
-    else:
-        # Image is taller: crop top/bottom
-        new_height = int(img.width / target_ratio)
-        top = (img.height - new_height) // 2
-        img = img.crop((0, top, img.width, top + new_height))
+    if mode == "fit_blur" or mode == "fit":
+        # Entire image visible without any crop or stretch, blurred edges
+        return create_fit_with_blurred_backdrop(img, width, height, palette)
 
-    img = img.resize((width, height), Image.Resampling.LANCZOS)
-
-    if mode == "blurred":
-        # Apply smooth Gaussian blur
-        blurred = img.filter(ImageFilter.GaussianBlur(radius=32))
+    elif mode == "blurred":
+        # Proportional center cover + Gaussian Blur + Theme Tint
+        cropped = ImageOps.fit(img, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        blurred = cropped.filter(ImageFilter.GaussianBlur(radius=32))
         
-        # Apply subtle overlay to ensure chat readability
         overlay_color = palette.bg_color
         alpha = 0.40 if palette.mode in ("dark", "amoled") else 0.25
         overlay = Image.new("RGB", (width, height), overlay_color)
-        img = Image.blend(blurred, overlay, alpha)
+        return Image.blend(blurred, overlay, alpha)
 
     elif mode == "dimmed":
-        # Darken/brighten original image slightly for text readability
+        # Proportional center cover + Dimming overlay
+        cropped = ImageOps.fit(img, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
         overlay_color = (0, 0, 0) if palette.mode in ("dark", "amoled") else (255, 255, 255)
-        alpha = 0.45 if palette.mode in ("dark", "amoled") else 0.35
+        alpha = 0.42 if palette.mode in ("dark", "amoled") else 0.32
         overlay = Image.new("RGB", (width, height), overlay_color)
-        img = Image.blend(img, overlay, alpha)
+        return Image.blend(cropped, overlay, alpha)
 
     elif mode == "gradient":
-        # Create a smooth dual/tri tone gradient
-        img = create_smooth_gradient(
+        # Dynamic smooth dual-tone gradient
+        return create_smooth_gradient(
             width, height,
             color1=palette.primary_accent,
             color2=palette.secondary_accent,
@@ -71,8 +94,12 @@ def generate_wallpaper(
             is_dark=palette.mode in ("dark", "amoled")
         )
 
-    # mode == "original" returns img as is (cropped & resized)
-    return img
+    elif mode in ("original", "cover"):
+        # Proportional center cover crop (ZERO stretching, perfect aspect ratio)
+        return ImageOps.fit(img, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+
+    # Fallback to cover
+    return ImageOps.fit(img, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
 
 
 def create_smooth_gradient(
@@ -86,14 +113,11 @@ def create_smooth_gradient(
     """
     Create a high-quality diagonal gradient image.
     """
-    # Create smaller array for speed, then resize with bilinear
     sw, sh = 256, 455
     y, x = np.mgrid[0:sh, 0:sw]
     
-    # Normalized diagonal coordinate 0.0 to 1.0
     diag = (x / sw * 0.6 + y / sh * 0.4)
     
-    # Darken colors slightly if in dark mode so background isn't blinding
     if is_dark:
         c1 = [int(v * 0.35) for v in color1]
         c2 = [int(v * 0.25) for v in color2]
@@ -112,7 +136,7 @@ def create_smooth_gradient(
     return small_img.resize((width, height), Image.Resampling.BICUBIC)
 
 
-def get_wallpaper_jpeg_bytes(wallpaper_img: Image.Image, quality: int = 88) -> bytes:
+def get_wallpaper_jpeg_bytes(wallpaper_img: Image.Image, quality: int = 90) -> bytes:
     """Convert PIL image to JPEG bytes for inclusion into .attheme or .tdesktop-theme."""
     bio = io.BytesIO()
     wallpaper_img.save(bio, format="JPEG", quality=quality, optimize=True)

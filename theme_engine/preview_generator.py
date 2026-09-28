@@ -1,12 +1,12 @@
 """
 Preview generator module for Telegram themes.
-Renders an ultra-clean realistic Telegram chat mockup and color palette card.
+Renders an ultra-clean realistic Telegram chat mockup and color palette card with zero distortion.
 """
 
 from typing import List, Tuple, Optional
 import io
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 from theme_engine.palette import ResolvedThemePalette
 from theme_engine.color_extractor import ExtractedColor, rgb_to_hex
 
@@ -49,6 +49,7 @@ def render_theme_preview(
 ) -> Image.Image:
     """
     Render a high-resolution preview card showing realistic Telegram UI and palette swatches.
+    Guarantees zero aspect-ratio distortion or stretching on wallpaper.
     """
     card = Image.new("RGB", (width, height), (20, 22, 28))
     draw = ImageDraw.Draw(card)
@@ -63,13 +64,12 @@ def render_theme_preview(
     font_small = get_font(11, bold=True)
 
     # 1. Chat Mockup Container Area
-    # (Top 0 to 820 is Phone Mockup Screen, 820 to 1000 is Swatch Bar)
     screen_w = width
     screen_h = 820
     
-    # Render Wallpaper into Chat Screen Area
+    # Render Wallpaper into Chat Screen Area with PROPORTIONAL fit (NO STRETCHING)
     chat_wall_h = screen_h - 65 - 65 # between top bar (65) and bottom bar (65)
-    wall_crop = wallpaper.resize((screen_w, chat_wall_h), Image.Resampling.LANCZOS)
+    wall_crop = ImageOps.fit(wallpaper, (screen_w, chat_wall_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
     card.paste(wall_crop, (0, 65))
 
     # Draw Top Bar (Header)
@@ -105,7 +105,6 @@ def render_theme_preview(
     draw.text((dx + 10, dy + 5), date_text, fill=palette.text_secondary, font=font_time)
 
     # 3. Incoming Message Bubble 1
-    # Small avatar for incoming
     in_av_box = (15, 150, 47, 182)
     draw.ellipse(in_av_box, fill=palette.secondary_accent)
     draw.text((24, 157), "AI", fill=(255, 255, 255), font=get_font(12, bold=True))
@@ -193,13 +192,8 @@ def render_theme_preview(
 
     for i, (label, color_rgb, hex_val) in enumerate(swatches_data):
         tx = start_x + i * (tile_w + spacing)
-        # Background card for swatch tile
         draw_rounded_rect(draw, (tx, swatch_y, tx + tile_w, swatch_y + tile_h), radius=10, fill=palette.bg_surface, outline=palette.separator_line)
-        
-        # Color circle / pill
         draw_rounded_rect(draw, (tx + 12, swatch_y + 10, tx + tile_w - 12, swatch_y + 44), radius=6, fill=color_rgb)
-        
-        # Label & Hex
         draw.text((tx + 10, swatch_y + 52), label, fill=palette.text_secondary, font=font_small)
         draw.text((tx + 10, swatch_y + 72), hex_val.upper(), fill=palette.text_primary, font=font_hex)
 
@@ -214,5 +208,5 @@ def render_preview_to_bytes(
     """Render preview card and return as PNG/JPEG bytes."""
     img = render_theme_preview(palette, wallpaper, extracted_colors)
     bio = io.BytesIO()
-    img.save(bio, format="JPEG", quality=90, optimize=True)
+    img.save(bio, format="JPEG", quality=92, optimize=True)
     return bio.getvalue()
