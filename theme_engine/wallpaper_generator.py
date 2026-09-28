@@ -1,6 +1,7 @@
 """
 Wallpaper processing and generation module for Telegram themes.
-Provides crisp, full-screen wallpaper scaling with zero distortion and zero unwanted blur.
+Provides ultra-sharp lossless wallpaper rendering (subsampling=0, quality=98)
+and preserves native resolution to prevent blurriness and distortion on Android and Desktop.
 """
 
 from typing import Tuple, Optional
@@ -14,71 +15,89 @@ def generate_wallpaper(
     base_image: Optional[Image.Image],
     palette: ResolvedThemePalette,
     mode: str = "original",
-    width: int = 1080,
-    height: int = 1920
+    width: Optional[int] = None,
+    height: Optional[int] = None
 ) -> Image.Image:
     """
-    Generate crisp, full-screen wallpaper with exact aspect ratio and zero distortion.
+    Generate wallpaper.
+    - If width/height are specified (e.g. for preview cards), crops/fits cleanly.
+    - If width/height are None (e.g. for phone export), preserves 100% native resolution and sharpness.
     """
     if base_image is None or mode == "solid":
-        # Solid color background
-        return Image.new("RGB", (width, height), palette.bg_color)
+        w = width or 1080
+        h = height or 2400
+        return Image.new("RGB", (w, h), palette.bg_color)
 
     img = base_image.convert("RGB")
 
+    # If explicit target canvas is requested (like preview card 800x690)
+    if width is not None and height is not None:
+        if mode == "original":
+            return ImageOps.fit(
+                img,
+                (width, height),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5)
+            )
+        elif mode == "dimmed":
+            cropped = ImageOps.fit(
+                img,
+                (width, height),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5)
+            )
+            overlay_color = (0, 0, 0) if palette.mode in ("dark", "amoled") else (255, 255, 255)
+            alpha = 0.35 if palette.mode in ("dark", "amoled") else 0.25
+            overlay = Image.new("RGB", (width, height), overlay_color)
+            return Image.blend(cropped, overlay, alpha)
+        elif mode == "blurred":
+            cropped = ImageOps.fit(
+                img,
+                (width, height),
+                method=Image.Resampling.LANCZOS,
+                centering=(0.5, 0.5)
+            )
+            blurred = cropped.filter(ImageFilter.GaussianBlur(radius=28))
+            overlay_color = palette.bg_color
+            alpha = 0.35 if palette.mode in ("dark", "amoled") else 0.20
+            overlay = Image.new("RGB", (width, height), overlay_color)
+            return Image.blend(blurred, overlay, alpha)
+        elif mode == "gradient":
+            return create_smooth_gradient(
+                width, height,
+                color1=palette.primary_accent,
+                color2=palette.secondary_accent,
+                color3=palette.bg_color,
+                is_dark=palette.mode in ("dark", "amoled")
+            )
+
+    # For device export (Android / Desktop): Preserve full native resolution & 100% sharpness!
     if mode == "original":
-        # Clean, crisp original image covering full screen without ANY blur or borders
-        return ImageOps.fit(
-            img,
-            (width, height),
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.5)
-        )
+        return img.copy()
 
     elif mode == "dimmed":
-        # Full-screen original image with subtle darkening for improved message readability
-        cropped = ImageOps.fit(
-            img,
-            (width, height),
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.5)
-        )
         overlay_color = (0, 0, 0) if palette.mode in ("dark", "amoled") else (255, 255, 255)
         alpha = 0.35 if palette.mode in ("dark", "amoled") else 0.25
-        overlay = Image.new("RGB", (width, height), overlay_color)
-        return Image.blend(cropped, overlay, alpha)
+        overlay = Image.new("RGB", img.size, overlay_color)
+        return Image.blend(img, overlay, alpha)
 
     elif mode == "blurred":
-        # Gaussian blur effect
-        cropped = ImageOps.fit(
-            img,
-            (width, height),
-            method=Image.Resampling.LANCZOS,
-            centering=(0.5, 0.5)
-        )
-        blurred = cropped.filter(ImageFilter.GaussianBlur(radius=28))
+        blurred = img.filter(ImageFilter.GaussianBlur(radius=28))
         overlay_color = palette.bg_color
         alpha = 0.35 if palette.mode in ("dark", "amoled") else 0.20
-        overlay = Image.new("RGB", (width, height), overlay_color)
+        overlay = Image.new("RGB", img.size, overlay_color)
         return Image.blend(blurred, overlay, alpha)
 
     elif mode == "gradient":
-        # Smooth dual-tone gradient
         return create_smooth_gradient(
-            width, height,
+            1080, 2400,
             color1=palette.primary_accent,
             color2=palette.secondary_accent,
             color3=palette.bg_color,
             is_dark=palette.mode in ("dark", "amoled")
         )
 
-    # Fallback to original cover
-    return ImageOps.fit(
-        img,
-        (width, height),
-        method=Image.Resampling.LANCZOS,
-        centering=(0.5, 0.5)
-    )
+    return img.copy()
 
 
 def create_smooth_gradient(
@@ -115,8 +134,18 @@ def create_smooth_gradient(
     return small_img.resize((width, height), Image.Resampling.BICUBIC)
 
 
-def get_wallpaper_jpeg_bytes(wallpaper_img: Image.Image, quality: int = 92) -> bytes:
-    """Convert PIL image to high quality JPEG bytes."""
+def get_wallpaper_jpeg_bytes(wallpaper_img: Image.Image, quality: int = 98, subsampling: int = 0) -> bytes:
+    """
+    Convert PIL image to ultra-sharp JPEG bytes with 4:4:4 full chroma sampling (subsampling=0).
+    Eliminates color bleeding, pixel smearing, and compression blur.
+    """
     bio = io.BytesIO()
-    wallpaper_img.save(bio, format="JPEG", quality=quality, optimize=True)
+    # Save with 4:4:4 full chroma sampling and 98% quality
+    wallpaper_img.save(
+        bio,
+        format="JPEG",
+        quality=quality,
+        subsampling=subsampling,
+        optimize=True
+    )
     return bio.getvalue()

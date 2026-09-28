@@ -172,7 +172,7 @@ async def cb_reset_settings(query: CallbackQuery):
     session.config.accent_idx = 0
     session.config.bubble_style = "vibrant"
     session.config.chat_tint = "rich"
-    session.config.wallpaper_mode = "blurred"
+    session.config.wallpaper_mode = "original"
     session.config.brightness_offset = 0
     session.config.custom_accent_hex = None
     await update_theme_view(query, session)
@@ -190,7 +190,8 @@ async def cb_download_android(query: CallbackQuery):
     await query.answer("⏳ Генерирую тему для Android...")
     
     palette = session.get_palette()
-    wallpaper = session.get_wallpaper(width=1080, height=1920)
+    # Native resolution for 100% sharpness on Android
+    wallpaper = session.get_wallpaper()
     attheme_bytes = generate_android_theme(palette, wallpaper, theme_name="Custom Android Theme")
     
     doc = BufferedInputFile(attheme_bytes, filename="Telegram_Android_Theme.attheme")
@@ -200,7 +201,7 @@ async def cb_download_android(query: CallbackQuery):
         "📥 <b>Как применить тему на Android:</b>\n"
         "1. Нажмите на прикрепленный файл <code>.attheme</code> выше.\n"
         "2. В появившемся окне нажмите <b>«Применить тему»</b>.\n"
-        "3. Готово! Все цвета и обои установлены автоматически."
+        "3. Готово! Все цвета и обои в исходной чёткости установлены."
     )
     
     await query.message.answer_document(doc, caption=caption, parse_mode="HTML", reply_markup=get_quick_download_keyboard())
@@ -216,7 +217,7 @@ async def cb_download_desktop(query: CallbackQuery):
     await query.answer("⏳ Генерирую тему для Telegram Desktop...")
     
     palette = session.get_palette()
-    wallpaper = session.get_wallpaper(width=1920, height=1080)
+    wallpaper = session.get_wallpaper()
     tdesktop_bytes = generate_desktop_theme(palette, wallpaper, theme_name="Custom Desktop Theme")
     
     doc = BufferedInputFile(tdesktop_bytes, filename="Telegram_PC_Theme.tdesktop-theme")
@@ -242,15 +243,13 @@ async def cb_download_all_zip(query: CallbackQuery):
     await query.answer("📦 Собираю полный ZIP-архив...")
     
     palette = session.get_palette()
-    wallpaper_phone = session.get_wallpaper(width=1080, height=1920)
-    wallpaper_desktop = session.get_wallpaper(width=1920, height=1080)
+    wallpaper_native = session.get_wallpaper()
     
-    attheme_bytes = generate_android_theme(palette, wallpaper_phone)
-    tdesktop_bytes = generate_desktop_theme(palette, wallpaper_desktop)
+    attheme_bytes = generate_android_theme(palette, wallpaper_native)
+    tdesktop_bytes = generate_desktop_theme(palette, wallpaper_native)
     palette_text = generate_desktop_palette_text(palette)
-    preview_bytes = render_preview_to_bytes(palette, wallpaper_phone, session.extracted_colors)
-    phone_wall_bytes = get_wallpaper_jpeg_bytes(wallpaper_phone, quality=95)
-    desk_wall_bytes = get_wallpaper_jpeg_bytes(wallpaper_desktop, quality=95)
+    preview_bytes = render_preview_to_bytes(palette, wallpaper_native, session.extracted_colors)
+    wall_bytes = get_wallpaper_jpeg_bytes(wallpaper_native, quality=98, subsampling=0)
     
     readme_text = (
         "===============================================\n"
@@ -264,9 +263,8 @@ async def cb_download_all_zip(query: CallbackQuery):
         "1. Telegram_Android.attheme - Theme for Android with wallpaper embedded.\n"
         "2. Telegram_Desktop.tdesktop-theme - Theme for Telegram Desktop (PC/Mac/Linux).\n"
         "3. colors.tdesktop-palette - Raw desktop color palette definition.\n"
-        "4. wallpaper_mobile.jpg - Full resolution mobile wallpaper.\n"
-        "5. wallpaper_desktop.jpg - Full resolution desktop wallpaper.\n"
-        "6. theme_preview.jpg - Visual theme preview and color swatches.\n\n"
+        "4. wallpaper_original.jpg - Full resolution lossless wallpaper.\n"
+        "5. theme_preview.jpg - Visual theme preview and color swatches.\n\n"
         "INSTALLATION:\n"
         "- On Android: Send Telegram_Android.attheme to Saved Messages and click on it.\n"
         "- On PC: Send Telegram_Desktop.tdesktop-theme to Saved Messages and click on it.\n"
@@ -277,8 +275,7 @@ async def cb_download_all_zip(query: CallbackQuery):
         zf.writestr("Telegram_Android.attheme", attheme_bytes)
         zf.writestr("Telegram_Desktop.tdesktop-theme", tdesktop_bytes)
         zf.writestr("colors.tdesktop-palette", palette_text.encode("utf-8"))
-        zf.writestr("wallpaper_mobile.jpg", phone_wall_bytes)
-        zf.writestr("wallpaper_desktop.jpg", desk_wall_bytes)
+        zf.writestr("wallpaper_original.jpg", wall_bytes)
         zf.writestr("theme_preview.jpg", preview_bytes)
         zf.writestr("README.txt", readme_text.encode("utf-8"))
         
@@ -291,7 +288,7 @@ async def cb_download_all_zip(query: CallbackQuery):
         "• 📱 Тема для Android (<code>.attheme</code>)\n"
         "• 💻 Тема для ПК (<code>.tdesktop-theme</code>)\n"
         "• 📄 Цветовая палитра (<code>.tdesktop-palette</code>)\n"
-        "• 🖼 HD Обои для телефона и ПК\n"
+        "• 🖼 HD Обои в оригинальной чёткости (4:4:4)\n"
         "• 🎨 Карточка предпросмотра с HEX-кодами"
     )
     

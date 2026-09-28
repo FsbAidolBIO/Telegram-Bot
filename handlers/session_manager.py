@@ -27,10 +27,10 @@ class UserThemeSession:
         self.created_at = time.time()
         self.last_accessed = time.time()
         
-        # Load and safely resize image (max 2560px) to prevent excessive memory usage
+        # Load image without downscaling (up to 4096px for ultra-sharp quality)
         raw_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        max_dim = 2560
-        if max_dim < max(raw_img.width, raw_img.height):
+        max_dim = 4096
+        if max(raw_img.width, raw_img.height) > max_dim:
             raw_img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
         
         self.original_image = raw_img
@@ -39,7 +39,7 @@ class UserThemeSession:
         self.extracted_colors = extract_palette_from_image(self.original_image, num_colors=8)
         self.is_image_light = detect_image_brightness(self.original_image)
         
-        # Default config: original image on full screen (no blur)
+        # Default config: original image on full screen
         initial_mode = "light" if self.is_image_light else "dark"
         self.config = ThemeConfig(mode=initial_mode, wallpaper_mode="original")
 
@@ -51,8 +51,8 @@ class UserThemeSession:
         """Resolve current palette with active config."""
         return build_palette(self.extracted_colors, self.config, self.is_image_light)
 
-    def get_wallpaper(self, width: int = 1080, height: int = 1920) -> Image.Image:
-        """Generate wallpaper for current setting."""
+    def get_wallpaper(self, width: Optional[int] = None, height: Optional[int] = None) -> Image.Image:
+        """Generate wallpaper. If width/height are None, preserves full native resolution."""
         palette = self.get_palette()
         return generate_wallpaper(
             self.original_image,
