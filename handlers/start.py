@@ -4,7 +4,7 @@ Start, help, and general informational handlers.
 
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, BufferedInputFile
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import io
 from PIL import Image, ImageDraw
@@ -17,25 +17,28 @@ router = Router(name="start_router")
 
 
 HELP_TEXT = """
-🎨 <b>Как создавать и устанавливать темы Telegram:</b>
+🎨 <b>Как создавать и настраивать темы Telegram:</b>
 
-1️⃣ <b>Отправьте изображение боту:</b>
-   • Отправьте любой скриншот, фото, обои или арт (как фото или файл).
-   • Бот автоматически извлечёт цвета и сгенерирует превью.
+1️⃣ <b>Отправьте скриншот или фото боту:</b>
+   • Отправьте любой скриншот (игры, аниме, фото, дизайн).
+   • Бот извлечёт палитру цветов и создаст живое превью темы.
 
-2️⃣ <b>Настройте тему под себя:</b>
-   • <b>🌓 Режим:</b> Переключайте между Тёмной, Светлой и AMOLED (True Black).
-   • <b>🎨 Акцент:</b> Выбирайте основной цвет акцентов из найденных в скриншоте.
-   • <b>🖼 Обои:</b> Размытие (Blur), Исходник, Градиент, Затемнение или Сплошной цвет.
-   • <b>💬 Бабблы:</b> Стиль входящих и исходящих сообщений.
-   • <b>➖ / ➕ Яркость:</b> Точная подгонка фона под ваши глаза.
+2️⃣ <b>Интерактивный выбор цветов и атмосферы:</b>
+   • <b>Кнопки цветов:</b> Нажимайте прямо на цветные кнопки (например <code>🔵 #00B4D8</code>), чтобы мгновенно сменить основной акцент!
+   • <b>🌌 Атмосфера:</b> Окрашивает фон списков, диалогов и поле ввода в атмосферный оттенок арта.
+   • <b>💬 Бабблы:</b>
+     - <i>Неон / Акцент</i>: яркий исходящий + атмосферный входящий
+     - <i>Двойной цвет</i>: 2 гармоничных акцента из фото
+     - <i>Мягкий тинт</i>: эстетичные пастельные тона
+     - <i>Стекло</i>: стильные карточки
+   • <b>🌓 Режим:</b> Dark, Light (не слепит глаза!), AMOLED.
+   • <b>🖼 Обои:</b> Размытие, Вписать (без обрезки), Заполнить, Градиент.
 
 3️⃣ <b>Установка темы:</b>
-   • <b>🤖 Android:</b> Скачайте файл <code>.attheme</code> → нажмите на него прямо в чате → в открывшемся окне нажмите кнопку <b>«Применить тему»</b>.
-   • <b>💻 Telegram Desktop (Windows / macOS / Linux):</b> Скачайте <code>.tdesktop-theme</code> → кликните по файлу в чате → нажмите <b>«Применить тему»</b>.
-   • <b>📦 Полный архив:</b> Содержит файлы для всех платформ + обои высокого качества.
+   • <b>Android:</b> Скачайте <code>.attheme</code> → нажмите на файл в чате → <b>«Применить тему»</b>.
+   • <b>ПК (Windows/Mac/Linux):</b> Кликните на <code>.tdesktop-theme</code> → <b>«Применить тему»</b>.
 
-🚀 <i>Отправьте скриншот прямо сейчас, чтобы начать!</i>
+🚀 <i>Отправьте изображение или нажмите /random для проверки!</i>
 """
 
 
@@ -43,14 +46,14 @@ HELP_TEXT = """
 async def handle_start(message: Message):
     text = (
         "👋 <b>Добро пожаловать в Telegram Theme Bot!</b>\n\n"
-        "Я умею превращать <b>любой скриншот, арт или фотографию</b> в готовую гармоничную тему для Telegram!\n\n"
-        "✨ <b>Что я умею:</b>\n"
-        "• 🤖 Темы для <b>Android</b> (формат <code>.attheme</code> со встроенными обоями)\n"
-        "• 💻 Темы для <b>ПК / Desktop</b> (формат <code>.tdesktop-theme</code>)\n"
-        "• 🌓 Режимы: <b>Dark</b>, <b>Light</b>, <b>AMOLED</b>\n"
-        "• 🖼 Размытые, градиентные или оригинальные обои\n"
-        "• 🎛 Гибкая настройка цветов, акцентов и бабблов\n\n"
-        "📸 <b>Просто отправьте мне любое фото или скриншот</b>, и я мгновенно создам вашу тему!"
+        "Я создаю гармоничные дизайнерские темы для Telegram из <b>любых скриншотов и артов</b>!\n\n"
+        "✨ <b>Что доступно:</b>\n"
+        "• 🎨 <b>Интерактивная сетка цветов</b> (выбор акцентов в 1 клик)\n"
+        "• 🌌 <b>Цветовая атмосфера чата</b> (никаких скучных серых и белых фонов)\n"
+        "• 📱 Темы для <b>Android</b> (<code>.attheme</code> со встроенными обоями)\n"
+        "• 💻 Темы для <b>ПК</b> (<code>.tdesktop-theme</code>)\n"
+        "• 🌓 Режимы: <b>Dark</b>, <b>Light</b>, <b>AMOLED</b>\n\n"
+        "📸 <b>Отправьте мне скриншот или фото прямо сейчас!</b>"
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -79,38 +82,35 @@ async def handle_random_theme(event):
     msg = event.message if isinstance(event, CallbackQuery) else event
     user_id = event.from_user.id
     
-    # Generate procedural colorful artwork
     w, h = 600, 800
-    img = Image.new("RGB", (w, h), (random.randint(10, 40), random.randint(15, 45), random.randint(25, 60)))
+    img = Image.new("RGB", (w, h), (random.randint(15, 35), random.randint(20, 45), random.randint(30, 65)))
     draw = ImageDraw.Draw(img)
     
-    # Random vibrant shapes
     for _ in range(6):
-        c = (random.randint(50, 255), random.randint(50, 255), random.randint(50, 255))
-        box = [random.randint(0, w-100), random.randint(0, h-100), random.randint(100, w), random.randint(100, h)]
+        c = (random.randint(60, 255), random.randint(60, 255), random.randint(60, 255))
+        box = [random.randint(0, w-120), random.randint(0, h-120), random.randint(120, w), random.randint(120, h)]
         draw.rounded_rectangle(box, radius=40, fill=c)
     
     bio = io.BytesIO()
     img.save(bio, format="PNG")
     raw_bytes = bio.getvalue()
     
-    # Create session
     session = session_manager.create_session(user_id, raw_bytes)
     palette = session.get_palette()
     wallpaper = session.get_wallpaper(width=800, height=820)
     
     preview_bytes = render_preview_to_bytes(palette, wallpaper, session.extracted_colors)
-    kb = get_theme_editor_keyboard(session.config, palette, len(session.extracted_colors))
+    kb = get_theme_editor_keyboard(session.config, palette, session.extracted_colors)
     
     caption = (
         "🎲 <b>Случайная тема создана!</b>\n\n"
         f"• <b>Режим:</b> {session.config.mode.upper()}\n"
         f"• <b>Основной акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
-        f"• <b>Фон:</b> <code>{palette.hex_bg.upper()}</code>\n\n"
-        "👇 <i>Используйте кнопки ниже для настройки и скачивания темы:</i>"
+        f"• <b>Второй цвет:</b> <code>{palette.hex_secondary_accent.upper()}</code>\n"
+        f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n\n"
+        "👇 <i>Выберите цвета или скачайте тему на кнопках ниже:</i>"
     )
     
-    from aiogram.types import BufferedInputFile
     photo_file = BufferedInputFile(preview_bytes, filename="preview.jpg")
     
     if isinstance(event, CallbackQuery):

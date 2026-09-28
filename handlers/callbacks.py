@@ -9,7 +9,11 @@ import io
 import zipfile
 import logging
 from handlers.session_manager import session_manager
-from handlers.keyboards import get_theme_editor_keyboard, get_quick_download_keyboard
+from handlers.keyboards import (
+    get_theme_editor_keyboard,
+    get_color_picker_keyboard,
+    get_quick_download_keyboard
+)
 from theme_engine.preview_generator import render_preview_to_bytes
 from theme_engine.android_generator import generate_android_theme
 from theme_engine.desktop_generator import generate_desktop_theme, generate_desktop_palette_text
@@ -27,24 +31,32 @@ async def update_theme_view(query: CallbackQuery, session):
     preview_bytes = render_preview_to_bytes(palette, wallpaper, session.extracted_colors)
     photo_file = BufferedInputFile(preview_bytes, filename="theme_preview.jpg")
     
+    tint_labels = {
+        "rich": "Глубокая (22%)",
+        "medium": "Умеренная (14%)",
+        "subtle": "Мягкая (6%)",
+        "clean": "Чистая (0%)"
+    }
+    tint_name = tint_labels.get(session.config.chat_tint, "Обычная")
+
     caption = (
         "✨ <b>Настройка темы обновлена!</b>\n\n"
         f"• <b>Режим:</b> {session.config.mode.upper()}\n"
-        f"• <b>Акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
-        f"• <b>Фон:</b> <code>{palette.hex_bg.upper()}</code>\n"
+        f"• <b>Основной акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
+        f"• <b>Второй цвет:</b> <code>{palette.hex_secondary_accent.upper()}</code>\n"
+        f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n"
         f"• <b>Обои:</b> {session.config.wallpaper_mode}\n"
-        f"• <b>Бабблы:</b> {session.config.bubble_style}\n"
-        f"• <b>Смещение яркости:</b> {session.config.brightness_offset}%\n\n"
-        "🎛 <i>Выберите параметры или скачайте тему:</i>"
+        f"• <b>Стиль сообщений:</b> {session.config.bubble_style}\n"
+        f"• <b>Атмосфера чата:</b> {tint_name}\n\n"
+        "🎛 <i>Выберите цвет или параметр на кнопках ниже:</i>"
     )
     
-    kb = get_theme_editor_keyboard(session.config, palette, len(session.extracted_colors))
+    kb = get_theme_editor_keyboard(session.config, palette, session.extracted_colors)
     media = InputMediaPhoto(media=photo_file, caption=caption, parse_mode="HTML")
     
     try:
         await query.message.edit_media(media=media, reply_markup=kb)
     except TelegramBadRequest as e:
-        # Ignore if media or content wasn't modified
         if "not modified" not in str(e).lower():
             logger.warning("TelegramBadRequest in edit_media: %s", e)
     except Exception as e:
@@ -56,6 +68,48 @@ async def update_theme_view(query: CallbackQuery, session):
             pass
 
 
+@router.callback_query(F.data.startswith("set_accent_"))
+async def cb_set_accent_index(query: CallbackQuery):
+    session = session_manager.get_session(query.from_user.id)
+    if not session:
+        await query.answer("⚠️ Сессия истекла. Отправьте скриншот заново.", show_alert=True)
+        return
+    idx_str = query.data.split("_")[-1]
+    if idx_str.isdigit():
+        session.config.set_accent_index(int(idx_str))
+    await update_theme_view(query, session)
+
+
+@router.callback_query(F.data == "open_palette_picker")
+async def cb_open_palette_picker(query: CallbackQuery):
+    session = session_manager.get_session(query.from_user.id)
+    if not session:
+        await query.answer("⚠️ Сессия истекла. Отправьте скриншот заново.", show_alert=True)
+        return
+    
+    kb = get_color_picker_keyboard(session.extracted_colors, session.config.accent_idx)
+    caption = (
+        "🎨 <b>Палитра цветов из вашего изображения:</b>\n\n"
+        "Нажмите на любой цвет ниже, чтобы мгновенно сделать его основным акцентом чата и интерфейса:\n"
+        "💡 <i>(Или отправьте свой HEX-код сообщением в чат, например <code>#FF4500</code>)</i>"
+    )
+    try:
+        await query.message.edit_caption(caption=caption, parse_mode="HTML", reply_markup=kb)
+    except Exception as e:
+        logger.warning("Failed to edit caption for color picker: %s", e)
+    await query.answer()
+
+
+@router.callback_query(F.data == "cycle_chat_tint")
+async def cb_cycle_chat_tint(query: CallbackQuery):
+    session = session_manager.get_session(query.from_user.id)
+    if not session:
+        await query.answer("⚠️ Сессия истекла.", show_alert=True)
+        return
+    session.config.cycle_chat_tint()
+    await update_theme_view(query, session)
+
+
 @router.callback_query(F.data == "toggle_mode")
 async def cb_toggle_mode(query: CallbackQuery):
     session = session_manager.get_session(query.from_user.id)
@@ -63,16 +117,6 @@ async def cb_toggle_mode(query: CallbackQuery):
         await query.answer("⚠️ Сессия истекла. Пожалуйста, отправьте скриншот заново.", show_alert=True)
         return
     session.config.cycle_mode()
-    await update_theme_view(query, session)
-
-
-@router.callback_query(F.data == "cycle_accent")
-async def cb_cycle_accent(query: CallbackQuery):
-    session = session_manager.get_session(query.from_user.id)
-    if not session:
-        await query.answer("⚠️ Сессия истекла. Отправьте фото заново.", show_alert=True)
-        return
-    session.config.cycle_accent(len(session.extracted_colors))
     await update_theme_view(query, session)
 
 
@@ -118,45 +162,6 @@ async def cb_brightness_minus(query: CallbackQuery):
     await update_theme_view(query, session)
 
 
-@router.callback_query(F.data == "preset_neon")
-async def cb_preset_neon(query: CallbackQuery):
-    session = session_manager.get_session(query.from_user.id)
-    if not session:
-        await query.answer("⚠️ Сессия истекла.", show_alert=True)
-        return
-    session.config.mode = "amoled"
-    session.config.bubble_style = "accent"
-    session.config.wallpaper_mode = "gradient"
-    session.config.brightness_offset = 0
-    await update_theme_view(query, session)
-
-
-@router.callback_query(F.data == "preset_pastel")
-async def cb_preset_pastel(query: CallbackQuery):
-    session = session_manager.get_session(query.from_user.id)
-    if not session:
-        await query.answer("⚠️ Сессия истекла.", show_alert=True)
-        return
-    session.config.mode = "light"
-    session.config.bubble_style = "tinted"
-    session.config.wallpaper_mode = "blurred"
-    session.config.brightness_offset = 5
-    await update_theme_view(query, session)
-
-
-@router.callback_query(F.data == "preset_cyberpunk")
-async def cb_preset_cyberpunk(query: CallbackQuery):
-    session = session_manager.get_session(query.from_user.id)
-    if not session:
-        await query.answer("⚠️ Сессия истекла.", show_alert=True)
-        return
-    session.config.mode = "dark"
-    session.config.bubble_style = "contrast"
-    session.config.wallpaper_mode = "dimmed"
-    session.config.brightness_offset = -10
-    await update_theme_view(query, session)
-
-
 @router.callback_query(F.data == "reset_settings")
 async def cb_reset_settings(query: CallbackQuery):
     session = session_manager.get_session(query.from_user.id)
@@ -165,7 +170,8 @@ async def cb_reset_settings(query: CallbackQuery):
         return
     session.config.mode = "light" if session.is_image_light else "dark"
     session.config.accent_idx = 0
-    session.config.bubble_style = "accent"
+    session.config.bubble_style = "vibrant"
+    session.config.chat_tint = "rich"
     session.config.wallpaper_mode = "blurred"
     session.config.brightness_offset = 0
     session.config.custom_accent_hex = None
@@ -239,19 +245,10 @@ async def cb_download_all_zip(query: CallbackQuery):
     wallpaper_phone = session.get_wallpaper(width=1080, height=1920)
     wallpaper_desktop = session.get_wallpaper(width=1920, height=1080)
     
-    # 1. Android .attheme
     attheme_bytes = generate_android_theme(palette, wallpaper_phone)
-    
-    # 2. Desktop .tdesktop-theme
     tdesktop_bytes = generate_desktop_theme(palette, wallpaper_desktop)
-    
-    # 3. Raw palette text
     palette_text = generate_desktop_palette_text(palette)
-    
-    # 4. Preview card
     preview_bytes = render_preview_to_bytes(palette, wallpaper_phone, session.extracted_colors)
-    
-    # 5. Wallpapers JPEG
     phone_wall_bytes = get_wallpaper_jpeg_bytes(wallpaper_phone, quality=95)
     desk_wall_bytes = get_wallpaper_jpeg_bytes(wallpaper_desktop, quality=95)
     
@@ -260,7 +257,8 @@ async def cb_download_all_zip(query: CallbackQuery):
         "       TELEGRAM THEME PACK - BY THEME BOT      \n"
         "===============================================\n\n"
         f"Mode: {palette.mode.upper()}\n"
-        f"Accent Hex: {palette.hex_primary_accent}\n"
+        f"Primary Accent Hex: {palette.hex_primary_accent}\n"
+        f"Secondary Accent Hex: {palette.hex_secondary_accent}\n"
         f"Background Hex: {palette.hex_bg}\n\n"
         "FILES IN THIS PACK:\n"
         "1. Telegram_Android.attheme - Theme for Android with wallpaper embedded.\n"

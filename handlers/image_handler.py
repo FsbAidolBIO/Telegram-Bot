@@ -19,38 +19,34 @@ router = Router(name="image_router")
 async def handle_photo(message: Message, bot: Bot):
     """Handles compressed photo messages."""
     user_id = message.from_user.id
-    
-    # Pick highest resolution
     photo = message.photo[-1]
     
     status_msg = await message.answer("🎨 <i>Анализирую цвета скриншота и создаю тему...</i>", parse_mode="HTML")
     
     try:
-        # Download file to memory
         file_io = io.BytesIO()
         await bot.download(photo, destination=file_io)
         image_bytes = file_io.getvalue()
         
-        # Initialize session
         session = session_manager.create_session(user_id, image_bytes)
         palette = session.get_palette()
         wallpaper = session.get_wallpaper(width=800, height=820)
         
-        # Render preview card
         preview_bytes = render_preview_to_bytes(palette, wallpaper, session.extracted_colors)
         photo_file = BufferedInputFile(preview_bytes, filename="theme_preview.jpg")
         
         caption = (
             "✨ <b>Тема успешно сгенерирована!</b>\n\n"
             f"• <b>Режим:</b> {session.config.mode.upper()}\n"
-            f"• <b>Акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
-            f"• <b>Фон:</b> <code>{palette.hex_bg.upper()}</code>\n"
+            f"• <b>Основной акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
+            f"• <b>Второй цвет:</b> <code>{palette.hex_secondary_accent.upper()}</code>\n"
+            f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n"
             f"• <b>Обои:</b> {session.config.wallpaper_mode}\n\n"
-            "🎛 <i>Настройте цвета или скачайте тему для вашей платформы:</i>\n"
-            "💡 <i>(Вы также можете отправить свой HEX-код, например <code>#FF5500</code>)</i>"
+            "🎛 <i>Выберите цвет или настройте тему на кнопках ниже:</i>\n"
+            "💡 <i>(Вы также можете отправить свой HEX-код сообщением, например <code>#FF5500</code>)</i>"
         )
         
-        kb = get_theme_editor_keyboard(session.config, palette, len(session.extracted_colors))
+        kb = get_theme_editor_keyboard(session.config, palette, session.extracted_colors)
         
         await message.answer_photo(photo_file, caption=caption, parse_mode="HTML", reply_markup=kb)
         try:
@@ -72,7 +68,7 @@ async def handle_document(message: Message, bot: Bot):
     
     is_image = mime.startswith("image/") or fname.endswith((".png", ".jpg", ".jpeg", ".webp"))
     if not is_image:
-        return  # Ignore non-image documents
+        return
         
     if doc.file_size and doc.file_size > 20 * 1024 * 1024:
         await message.answer("⚠️ Файл слишком большой. Пожалуйста, отправьте изображение размером до 20 МБ.")
@@ -96,13 +92,14 @@ async def handle_document(message: Message, bot: Bot):
         caption = (
             "✨ <b>Тема успешно сгенерирована из файла!</b>\n\n"
             f"• <b>Режим:</b> {session.config.mode.upper()}\n"
-            f"• <b>Акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
-            f"• <b>Фон:</b> <code>{palette.hex_bg.upper()}</code>\n"
+            f"• <b>Основной акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
+            f"• <b>Второй цвет:</b> <code>{palette.hex_secondary_accent.upper()}</code>\n"
+            f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n"
             f"• <b>Обои:</b> {session.config.wallpaper_mode}\n\n"
-            "🎛 <i>Настройте цвета или скачайте готовую тему:</i>"
+            "🎛 <i>Выберите цвет или настройте тему:</i>"
         )
         
-        kb = get_theme_editor_keyboard(session.config, palette, len(session.extracted_colors))
+        kb = get_theme_editor_keyboard(session.config, palette, session.extracted_colors)
         
         await message.answer_photo(photo_file, caption=caption, parse_mode="HTML", reply_markup=kb)
         try:
@@ -144,7 +141,7 @@ async def handle_custom_text(message: Message):
                 f"• <b>Обои:</b> {session.config.wallpaper_mode}\n\n"
                 "🎛 <i>Продолжайте настройку или скачайте файл темы:</i>"
             )
-            kb = get_theme_editor_keyboard(session.config, palette, len(session.extracted_colors))
+            kb = get_theme_editor_keyboard(session.config, palette, session.extracted_colors)
             await message.answer_photo(photo_file, caption=caption, parse_mode="HTML", reply_markup=kb)
         else:
             await message.answer("⚠️ Не удалось применить HEX-код. Формат: <code>#RRGGBB</code> (например, <code>#3A86FF</code>).", parse_mode="HTML")

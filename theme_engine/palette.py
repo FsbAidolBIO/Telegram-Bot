@@ -1,6 +1,6 @@
 """
 Theme Palette generator and color logic for Telegram themes.
-Handles mode switching (Dark, Light, AMOLED), contrast tuning, and bubble styling.
+Handles mode switching (Dark, Light, AMOLED), chromatic chat atmosphere, and bubble styling.
 """
 
 from typing import List, Dict, Any, Tuple, Optional
@@ -23,7 +23,8 @@ class ThemeConfig:
     mode: str = "dark"               # "dark", "light", "amoled", "auto"
     accent_idx: int = 0             # Index into extracted vibrant colors
     secondary_idx: int = 1          # Index for secondary accent
-    bubble_style: str = "accent"    # "accent", "tinted", "contrast", "minimal"
+    bubble_style: str = "vibrant"   # "vibrant", "dual", "soft", "glass", "minimal"
+    chat_tint: str = "rich"         # "rich" (22%), "medium" (14%), "subtle" (6%), "clean" (0%)
     wallpaper_mode: str = "blurred" # "blurred", "fit_blur", "cover", "dimmed", "gradient", "solid"
     brightness_offset: int = 0      # -30 to +30 percent
     contrast_boost: bool = False
@@ -42,10 +43,16 @@ class ThemeConfig:
         return self.wallpaper_mode
 
     def cycle_bubble(self) -> str:
-        bubbles = ["accent", "tinted", "contrast", "minimal"]
+        bubbles = ["vibrant", "dual", "soft", "glass", "minimal"]
         next_idx = (bubbles.index(self.bubble_style) + 1) % len(bubbles) if self.bubble_style in bubbles else 0
         self.bubble_style = bubbles[next_idx]
         return self.bubble_style
+
+    def cycle_chat_tint(self) -> str:
+        tints = ["rich", "medium", "subtle", "clean"]
+        next_idx = (tints.index(self.chat_tint) + 1) % len(tints) if self.chat_tint in tints else 0
+        self.chat_tint = tints[next_idx]
+        return self.chat_tint
 
     def cycle_accent(self, max_count: int) -> int:
         if max_count <= 0:
@@ -53,6 +60,10 @@ class ThemeConfig:
         self.custom_accent_hex = None
         self.accent_idx = (self.accent_idx + 1) % max_count
         return self.accent_idx
+
+    def set_accent_index(self, idx: int):
+        self.custom_accent_hex = None
+        self.accent_idx = idx
 
 
 @dataclass
@@ -129,7 +140,7 @@ class ResolvedThemePalette:
 
 def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, is_image_light: bool = False) -> ResolvedThemePalette:
     """
-    Generate a full harmonized color scheme based on extracted colors and user config.
+    Generate a full harmonized color scheme with rich chromatic atmosphere.
     """
     if not extracted_colors:
         extracted_colors = [
@@ -160,94 +171,117 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
     sec_i = (config.accent_idx + 1) % len(vibrant_sorted)
     secondary_raw = vibrant_sorted[sec_i].rgb
 
-    # Base dominant color from image
+    # Dominant base color for atmospheric tinting
     base_raw = extracted_colors[0].rgb
 
-    # Brightness adjustment helper
+    # Determine tint intensity factor
+    tint_factors = {
+        "rich": 0.22,
+        "medium": 0.14,
+        "subtle": 0.06,
+        "clean": 0.00
+    }
+    tint_factor = tint_factors.get(config.chat_tint, 0.18)
     b_offset = config.brightness_offset / 100.0
 
     if mode == "amoled":
         # OLED True Black Theme
         bg_color = (0, 0, 0)
-        bg_surface = (18, 18, 20)
-        bg_elevated = (28, 28, 32)
+        # Give surfaces a subtle atmospheric chromatic glow
+        bg_surface = blend_colors((16, 16, 20), primary_raw, tint_factor * 0.4)
+        bg_elevated = blend_colors((26, 26, 32), primary_raw, tint_factor * 0.6)
         topbar_bg = (0, 0, 0)
         dialogs_bg = (0, 0, 0)
-        input_bar_bg = (16, 16, 18)
+        input_bar_bg = bg_surface
         
-        primary_accent = adjust_lightness(primary_raw, min(0.65, max(0.50, get_luminance(*primary_raw))))
-        secondary_accent = adjust_lightness(secondary_raw, min(0.65, max(0.50, get_luminance(*secondary_raw))))
+        primary_accent = adjust_lightness(primary_raw, min(0.68, max(0.50, get_luminance(*primary_raw))))
+        secondary_accent = adjust_lightness(secondary_raw, min(0.68, max(0.50, get_luminance(*secondary_raw))))
         accent_hover = adjust_lightness(primary_accent, min(1.0, get_luminance(*primary_accent) + 0.1))
 
         text_primary = (255, 255, 255)
-        text_secondary = (150, 150, 160)
+        text_secondary = (155, 160, 175)
         text_link = primary_accent
-        separator_line = (35, 35, 40)
+        separator_line = blend_colors((35, 35, 42), primary_raw, 0.15)
         
         input_bar_text = (255, 255, 255)
-        input_bar_hint = (120, 120, 130)
+        input_bar_hint = (125, 130, 145)
 
         # Bubbles
-        if config.bubble_style == "accent":
+        if config.bubble_style == "vibrant":
             out_bubble_bg = primary_accent
             out_bubble_text = get_best_text_color(out_bubble_bg)
-            in_bubble_bg = (24, 24, 28)
-            in_bubble_text = (245, 245, 245)
-        elif config.bubble_style == "tinted":
-            out_bubble_bg = blend_colors((30, 30, 35), primary_accent, 0.45)
-            out_bubble_text = (255, 255, 255)
-            in_bubble_bg = (22, 22, 26)
-            in_bubble_text = (245, 245, 245)
-        elif config.bubble_style == "contrast":
+            in_bubble_bg = bg_elevated
+            in_bubble_text = (245, 248, 255)
+        elif config.bubble_style == "dual":
             out_bubble_bg = primary_accent
             out_bubble_text = get_best_text_color(out_bubble_bg)
             in_bubble_bg = secondary_accent
             in_bubble_text = get_best_text_color(in_bubble_bg)
+        elif config.bubble_style == "soft":
+            out_bubble_bg = blend_colors((35, 35, 45), primary_accent, 0.55)
+            out_bubble_text = (255, 255, 255)
+            in_bubble_bg = blend_colors((25, 25, 32), secondary_accent, 0.35)
+            in_bubble_text = (240, 245, 255)
+        elif config.bubble_style == "glass":
+            out_bubble_bg = blend_colors((20, 20, 25), primary_accent, 0.40)
+            out_bubble_text = (255, 255, 255)
+            in_bubble_bg = (20, 20, 24)
+            in_bubble_text = (240, 240, 240)
         else: # minimal
-            out_bubble_bg = (30, 30, 35)
+            out_bubble_bg = (32, 32, 38)
             out_bubble_text = (255, 255, 255)
             in_bubble_bg = (18, 18, 22)
-            in_bubble_text = (240, 240, 240)
+            in_bubble_text = (235, 235, 235)
 
     elif mode == "dark":
-        # Deep Modern Dark Theme
-        tinted_dark = blend_colors((22, 26, 33), base_raw, 0.08)
+        # Deep Atmospheric Dark Theme
+        # Blend base dark neutral with screenshot's dominant tone
+        tinted_dark = blend_colors((18, 22, 28), base_raw, tint_factor)
         
-        l_bg = max(0.05, min(0.25, 0.10 + b_offset))
+        l_bg = max(0.06, min(0.28, 0.11 + b_offset))
         bg_color = adjust_lightness(tinted_dark, l_bg)
-        bg_surface = blend_colors(bg_color, (255, 255, 255), 0.06)
-        bg_elevated = blend_colors(bg_color, (255, 255, 255), 0.12)
+        
+        # Surfaces inherit rich chromatic depth
+        bg_surface = blend_colors(bg_color, primary_raw, 0.08)
+        bg_surface = blend_colors(bg_surface, (255, 255, 255), 0.07)
+        bg_elevated = blend_colors(bg_surface, (255, 255, 255), 0.08)
+        
         topbar_bg = bg_color
         dialogs_bg = bg_color
         input_bar_bg = bg_surface
 
-        primary_accent = adjust_lightness(primary_raw, min(0.68, max(0.52, get_luminance(*primary_raw))))
-        secondary_accent = adjust_lightness(secondary_raw, min(0.68, max(0.52, get_luminance(*secondary_raw))))
-        accent_hover = adjust_lightness(primary_accent, min(0.9, get_luminance(*primary_accent) + 0.08))
+        primary_accent = adjust_lightness(primary_raw, min(0.70, max(0.53, get_luminance(*primary_raw))))
+        secondary_accent = adjust_lightness(secondary_raw, min(0.70, max(0.53, get_luminance(*secondary_raw))))
+        accent_hover = adjust_lightness(primary_accent, min(0.92, get_luminance(*primary_accent) + 0.08))
 
-        text_primary = (248, 250, 252) if not config.contrast_boost else (255, 255, 255)
-        text_secondary = (142, 155, 168)
+        text_primary = (248, 250, 255) if not config.contrast_boost else (255, 255, 255)
+        text_secondary = blend_colors((145, 158, 175), primary_accent, 0.15)
         text_link = primary_accent
-        separator_line = blend_colors(bg_color, (255, 255, 255), 0.10)
+        separator_line = blend_colors(bg_color, (255, 255, 255), 0.12)
         
-        input_bar_text = (248, 250, 252)
-        input_bar_hint = (130, 140, 155)
+        input_bar_text = (248, 250, 255)
+        input_bar_hint = blend_colors((135, 145, 160), primary_accent, 0.15)
 
-        if config.bubble_style == "accent":
+        if config.bubble_style == "vibrant":
             out_bubble_bg = primary_accent
             out_bubble_text = get_best_text_color(out_bubble_bg)
-            in_bubble_bg = bg_surface
+            in_bubble_bg = bg_elevated
             in_bubble_text = text_primary
-        elif config.bubble_style == "tinted":
-            out_bubble_bg = blend_colors(bg_color, primary_accent, 0.45)
-            out_bubble_text = (255, 255, 255)
-            in_bubble_bg = blend_colors(bg_color, secondary_accent, 0.20)
-            in_bubble_text = text_primary
-        elif config.bubble_style == "contrast":
+        elif config.bubble_style == "dual":
             out_bubble_bg = primary_accent
             out_bubble_text = get_best_text_color(out_bubble_bg)
             in_bubble_bg = secondary_accent
             in_bubble_text = get_best_text_color(in_bubble_bg)
+        elif config.bubble_style == "soft":
+            out_bubble_bg = blend_colors(bg_color, primary_accent, 0.50)
+            out_bubble_text = (255, 255, 255)
+            in_bubble_bg = blend_colors(bg_color, secondary_accent, 0.28)
+            in_bubble_text = text_primary
+        elif config.bubble_style == "glass":
+            out_bubble_bg = blend_colors(bg_color, primary_accent, 0.35)
+            out_bubble_text = (255, 255, 255)
+            in_bubble_bg = bg_surface
+            in_bubble_text = text_primary
         else: # minimal
             out_bubble_bg = bg_elevated
             out_bubble_text = text_primary
@@ -255,48 +289,55 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
             in_bubble_text = text_primary
 
     else:
-        # Crisp Light Theme
-        tinted_light = blend_colors((245, 247, 250), base_raw, 0.05)
+        # Crisp Chromatic Light Theme (Not blinding white! Atmospheric soft tints)
+        tinted_light = blend_colors((242, 245, 250), base_raw, tint_factor * 0.7)
         
-        l_bg = max(0.90, min(1.0, 0.96 + b_offset))
+        l_bg = max(0.88, min(0.98, 0.95 + b_offset))
         bg_color = adjust_lightness(tinted_light, l_bg)
-        bg_surface = (255, 255, 255)
-        bg_elevated = blend_colors((255, 255, 255), (0, 0, 0), 0.05)
-        topbar_bg = (255, 255, 255)
-        dialogs_bg = (255, 255, 255)
-        input_bar_bg = (255, 255, 255)
+        
+        # Surfaces: delicate atmospheric tint
+        bg_surface = blend_colors((255, 255, 255), primary_raw, 0.04)
+        bg_elevated = blend_colors(bg_surface, (0, 0, 0), 0.04)
+        topbar_bg = bg_surface
+        dialogs_bg = bg_surface
+        input_bar_bg = bg_surface
 
-        primary_accent = adjust_lightness(primary_raw, min(0.45, max(0.35, get_luminance(*primary_raw))))
-        secondary_accent = adjust_lightness(secondary_raw, min(0.48, max(0.35, get_luminance(*secondary_raw))))
+        primary_accent = adjust_lightness(primary_raw, min(0.44, max(0.32, get_luminance(*primary_raw))))
+        secondary_accent = adjust_lightness(secondary_raw, min(0.48, max(0.32, get_luminance(*secondary_raw))))
         accent_hover = adjust_lightness(primary_accent, max(0.2, get_luminance(*primary_accent) - 0.08))
 
-        text_primary = (24, 28, 35) if not config.contrast_boost else (0, 0, 0)
-        text_secondary = (105, 115, 130)
+        text_primary = (20, 26, 36) if not config.contrast_boost else (0, 0, 0)
+        text_secondary = blend_colors((95, 110, 130), primary_accent, 0.20)
         text_link = primary_accent
-        separator_line = (228, 232, 240)
+        separator_line = blend_colors(bg_color, (0, 0, 0), 0.08)
         
-        input_bar_text = (24, 28, 35)
-        input_bar_hint = (150, 160, 175)
+        input_bar_text = (20, 26, 36)
+        input_bar_hint = blend_colors((145, 155, 170), primary_accent, 0.15)
 
-        if config.bubble_style == "accent":
+        if config.bubble_style == "vibrant":
             out_bubble_bg = primary_accent
             out_bubble_text = get_best_text_color(out_bubble_bg)
-            in_bubble_bg = (255, 255, 255)
+            in_bubble_bg = bg_surface
             in_bubble_text = text_primary
-        elif config.bubble_style == "tinted":
-            out_bubble_bg = blend_colors((255, 255, 255), primary_accent, 0.22)
+        elif config.bubble_style == "dual":
+            out_bubble_bg = primary_accent
+            out_bubble_text = get_best_text_color(out_bubble_bg)
+            in_bubble_bg = blend_colors(bg_surface, secondary_accent, 0.30)
+            in_bubble_text = text_primary
+        elif config.bubble_style == "soft":
+            out_bubble_bg = blend_colors((255, 255, 255), primary_accent, 0.25)
             out_bubble_text = (20, 25, 35)
-            in_bubble_bg = (255, 255, 255)
+            in_bubble_bg = bg_surface
             in_bubble_text = text_primary
-        elif config.bubble_style == "contrast":
-            out_bubble_bg = primary_accent
-            out_bubble_text = get_best_text_color(out_bubble_bg)
-            in_bubble_bg = blend_colors((255, 255, 255), secondary_accent, 0.25)
+        elif config.bubble_style == "glass":
+            out_bubble_bg = blend_colors(bg_color, primary_accent, 0.20)
+            out_bubble_text = (20, 25, 35)
+            in_bubble_bg = bg_surface
             in_bubble_text = text_primary
         else: # minimal
-            out_bubble_bg = (235, 240, 248)
+            out_bubble_bg = blend_colors(bg_surface, primary_accent, 0.15)
             out_bubble_text = text_primary
-            in_bubble_bg = (255, 255, 255)
+            in_bubble_bg = bg_surface
             in_bubble_text = text_primary
 
     # Compute time & reply bar colors
@@ -304,7 +345,7 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
     in_bubble_reply_bar = primary_accent
 
     out_bubble_time = blend_colors(out_bubble_text, out_bubble_bg, 0.35)
-    out_bubble_reply_bar = blend_colors(out_bubble_text, (255, 255, 255), 0.2)
+    out_bubble_reply_bar = blend_colors(out_bubble_text, (255, 255, 255), 0.25)
 
     send_button = primary_accent
     unread_badge_bg = primary_accent

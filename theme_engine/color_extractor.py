@@ -20,10 +20,9 @@ def hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
     hex_str = hex_str.strip().lstrip("#")
     if len(hex_str) == 3:
         hex_str = "".join(c * 2 for c in hex_str)
-    elif len(hex_str) == 8:  # AARRGGBB or RRGGBBAA
+    elif len(hex_str) == 8:
         hex_str = hex_str[2:8]
     elif len(hex_str) != 6:
-        # Fallback if invalid hex length
         return (42, 114, 212)
     try:
         r = int(hex_str[0:2], 16)
@@ -40,6 +39,30 @@ def is_valid_hex(hex_str: str) -> bool:
     if len(cleaned) not in (3, 6, 8):
         return False
     return all(c in "0123456789abcdefABCDEF" for c in cleaned)
+
+
+def get_color_emoji(rgb: Tuple[int, int, int]) -> str:
+    """Return an appropriate colored circle emoji based on RGB hue and saturation."""
+    h, l, s = colorsys.rgb_to_hls(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+    if s < 0.16:
+        return "⚪" if l > 0.65 else ("🔘" if l > 0.3 else "⚫")
+    deg = h * 360.0
+    if deg < 20 or deg >= 345:
+        return "🔴"
+    elif deg < 48:
+        return "🟠"
+    elif deg < 72:
+        return "🟡"
+    elif deg < 160:
+        return "🟢"
+    elif deg < 200:
+        return "🔷"
+    elif deg < 260:
+        return "🔵"
+    elif deg < 315:
+        return "🟣"
+    else:
+        return "🌸"
 
 
 def get_luminance(r: int, g: int, b: int) -> float:
@@ -99,8 +122,8 @@ def generate_harmonic_color(base_rgb: Tuple[int, int, int], hue_shift_degrees: f
     """Generate a harmonic color by shifting hue."""
     h, l, s = colorsys.rgb_to_hls(base_rgb[0] / 255.0, base_rgb[1] / 255.0, base_rgb[2] / 255.0)
     new_h = (h + hue_shift_degrees / 360.0) % 1.0
-    new_s = max(0.5, s)
-    new_l = max(0.4, min(0.65, l))
+    new_s = max(0.55, s)
+    new_l = max(0.42, min(0.68, l))
     nr, ng, nb = colorsys.hls_to_rgb(new_h, new_l, new_s)
     return (int(nr * 255), int(ng * 255), int(nb * 255))
 
@@ -116,15 +139,17 @@ class ExtractedColor:
         # HLS values
         self.h, self.l, self.s = colorsys.rgb_to_hls(self.r / 255.0, self.g / 255.0, self.b / 255.0)
         self.luminance = get_luminance(self.r, self.g, self.b)
+        self.emoji = get_color_emoji(self.rgb)
         
         # Vibrancy score: high saturation + moderate lightness is most vibrant
         lightness_penalty = abs(self.l - 0.5) * 1.5
-        self.vibrancy = self.s * max(0.1, 1.0 - lightness_penalty)
+        self.vibrancy = self.s * max(0.15, 1.0 - lightness_penalty)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "hex": self.hex,
             "rgb": [self.r, self.g, self.b],
+            "emoji": self.emoji,
             "vibrancy": round(self.vibrancy, 3),
             "luminance": round(self.luminance, 3),
             "count": self.count
@@ -133,16 +158,15 @@ class ExtractedColor:
 
 def extract_palette_from_image(image: Image.Image, num_colors: int = 8) -> List[ExtractedColor]:
     """
-    Extract a clean, distinct palette from a PIL Image using quantization and clustering.
-    If the image has low color variety (monochrome/grayscale), generates harmonic colors.
+    Extract a rich, diverse, and vibrant palette from a PIL Image.
+    Separates dominant background tones from vibrant foreground accents.
     """
-    # Resize image to a thumbnail for performance & noise smoothing
     thumb = image.convert("RGB")
-    thumb.thumbnail((200, 200), Image.Resampling.BILINEAR)
+    thumb.thumbnail((250, 250), Image.Resampling.BILINEAR)
     
-    # Use adaptive quantization
-    quantized = thumb.quantize(colors=32, method=Image.Quantize.MEDIANCUT)
-    palette_data = quantized.getpalette()[: 32 * 3]
+    # Adaptive quantization
+    quantized = thumb.quantize(colors=36, method=Image.Quantize.MEDIANCUT)
+    palette_data = quantized.getpalette()[: 36 * 3]
     color_counts = quantized.getcolors() or []
     
     colors_raw: List[ExtractedColor] = []
@@ -153,44 +177,45 @@ def extract_palette_from_image(image: Image.Image, num_colors: int = 8) -> List[
         colors_raw.append(ExtractedColor((r, g, b), count=count))
     
     if not colors_raw:
-        # Fallback to default pleasant palette
         default_hexes = ["#2A72D4", "#5EB5F7", "#8E52EA", "#E5484D", "#30A46C", "#F76808", "#1E232A", "#FFFFFF"]
         return [ExtractedColor(hex_to_rgb(h)) for h in default_hexes]
 
-    # Sort raw colors by frequency
-    colors_raw.sort(key=lambda c: c.count, reverse=True)
+    # Precalculate max count safely
+    max_count = max((c.count for c in colors_raw), default=1)
     
-    # Filter out near duplicates (merge similar colors)
+    # Sort raw colors: prioritize vibrant colors first, followed by frequency
+    colors_raw.sort(key=lambda c: (c.vibrancy * 2.0 + (c.count / max_count)), reverse=True)
+    
+    # Select distinct colors
     distinct_colors: List[ExtractedColor] = []
-    min_distance = 28.0  # Threshold in RGB space
+    min_distance = 32.0
     
     for color in colors_raw:
         if not distinct_colors:
             distinct_colors.append(color)
             continue
         
-        # Check distance to all already selected
-        is_distinct = True
-        for selected in distinct_colors:
-            if color_distance(color.rgb, selected.rgb) < min_distance:
-                is_distinct = False
-                break
-        
-        if is_distinct:
+        if all(color_distance(color.rgb, s.rgb) >= min_distance for s in distinct_colors):
             distinct_colors.append(color)
             if len(distinct_colors) >= num_colors:
                 break
                 
-    # If the image was monochrome/single-toned and yielded fewer than 6 colors,
-    # generate rich harmonic complement and triadic colors!
+    # If we still have room, add secondary colors with lower threshold
+    if len(distinct_colors) < num_colors:
+        for color in colors_raw:
+            if color not in distinct_colors and all(color_distance(color.rgb, s.rgb) >= 20.0 for s in distinct_colors):
+                distinct_colors.append(color)
+                if len(distinct_colors) >= num_colors:
+                    break
+
+    # If colors are still too sparse / monochromatic, generate harmonic accents!
     if len(distinct_colors) < 6:
         base_color = distinct_colors[0].rgb
         shifts = [35.0, 75.0, 140.0, 180.0, 215.0, 290.0]
         for shift in shifts:
             h_rgb = generate_harmonic_color(base_color, shift)
             new_c = ExtractedColor(h_rgb, count=1)
-            # check if distinct
-            if not any(color_distance(new_c.rgb, c.rgb) < 20.0 for c in distinct_colors):
+            if all(color_distance(new_c.rgb, c.rgb) >= 20.0 for c in distinct_colors):
                 distinct_colors.append(new_c)
             if len(distinct_colors) >= num_colors:
                 break
