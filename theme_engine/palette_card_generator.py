@@ -1,6 +1,7 @@
 """
 Palette Card Generator for Telegram Theme Studio.
 Generates a standalone high-resolution color swatch card image (PNG) for sharing.
+Ensures clean text rendering without missing glyph/tofu boxes (▯).
 """
 
 from typing import List, Tuple
@@ -31,14 +32,14 @@ def generate_palette_card(
     img = Image.new("RGB", (width, height), bg_color)
     draw = ImageDraw.Draw(img)
 
-    font_title = get_font(32, bold=True)
-    font_sub = get_font(18, bold=False)
-    font_chip_title = get_font(17, bold=True)
-    font_chip_code = get_font(15, bold=False)
-    font_chip_role = get_font(13, bold=True)
+    font_title = get_font(30, bold=True)
+    font_sub = get_font(17, bold=False)
+    font_chip_title = get_font(16, bold=True)
+    font_chip_code = get_font(14, bold=False)
+    font_chip_role = get_font(12, bold=True)
 
     # Header
-    draw.text((60, 45), "🎨 Telegram Theme Studio — Цветовая палитра", fill=text_main, font=font_title)
+    draw.text((60, 45), "Telegram Theme Studio — Цветовая палитра", fill=text_main, font=font_title)
     mode_text = "Тёмная тема (Dark)" if palette.mode == "dark" else ("AMOLED (OLED Black)" if palette.mode == "amoled" else "Светлая тема (Light)")
     draw.text((60, 90), f"Режим: {mode_text}  •  Всего оттенков: {len(extracted_colors)}", fill=text_sub, font=font_sub)
 
@@ -77,7 +78,7 @@ def generate_palette_card(
         draw.text((x + 16, y + 238), f"RGB: {col.r}, {col.g}, {col.b}", fill=text_sub, font=font_chip_code)
 
     # Footer
-    draw.text((60, height - 40), "✨ Создано с помощью Telegram Theme Bot", fill=text_sub, font=get_font(14))
+    draw.text((60, height - 40), "• Создано с помощью Telegram Theme Bot", fill=text_sub, font=get_font(14))
 
     return img
 

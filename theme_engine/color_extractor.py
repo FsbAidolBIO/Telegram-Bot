@@ -1,6 +1,6 @@
 """
 Color extraction, harmony generator, and color naming utilities for Telegram themes.
-Uses advanced color clustering and W3C WCAG accessibility standards.
+Uses advanced multi-pass color clustering, saturated micro-detail detection, and W3C WCAG accessibility standards.
 """
 
 from typing import List, Tuple, Dict, Any, Optional, Union
@@ -279,41 +279,74 @@ class ExtractedColor:
 
 def extract_palette_from_image(image: Image.Image, num_colors: int = 8) -> List[ExtractedColor]:
     """
-    Extract dominant and accent colors using quantized color clustering.
-    Fast and highly representative of image aesthetics.
+    Extract dominant and accent colors using multi-pass color clustering.
+    Discovers saturated micro-details (e.g. glowing eyes, blush, logos) in dark/B&W images,
+    and provides stylish aesthetic accents if the artwork is purely monochrome.
     """
     thumb = image.copy()
-    thumb.thumbnail((180, 180), Image.Resampling.BILINEAR)
+    thumb.thumbnail((250, 250), Image.Resampling.BILINEAR)
     thumb = thumb.convert("RGB")
+    
+    # Pass 1: Saturated Micro-Detail Scanner
+    # Detects saturated colors (sat > 0.20) even if they represent only 0.2% of the art
+    raw_pixels = list(thumb.getdata())
+    saturated_pixels = [
+        p for p in raw_pixels
+        if get_saturation(*p) > 0.20 and 0.10 <= get_luminance(*p) <= 0.90
+    ]
+    
+    accent_candidates: List[ExtractedColor] = []
+    if saturated_pixels:
+        sat_counts = Counter(saturated_pixels)
+        for rgb, count in sat_counts.most_common(15):
+            # Boost the weight of vibrant accents
+            accent_candidates.append(ExtractedColor(rgb, count=count * 5))
 
+    # Pass 2: Quantized Dominant Clusterer
     quantized = thumb.quantize(colors=24, method=Image.Quantize.MEDIANCUT)
     palette_data = quantized.getpalette()[:72]
     color_counts = Counter(quantized.getdata())
 
-    extracted: List[ExtractedColor] = []
+    dominant_candidates: List[ExtractedColor] = []
     for idx, count in color_counts.most_common():
         r = palette_data[idx * 3]
         g = palette_data[idx * 3 + 1]
         b = palette_data[idx * 3 + 2]
-        extracted.append(ExtractedColor((r, g, b), count=count))
+        dominant_candidates.append(ExtractedColor((r, g, b), count=count))
 
+    # Merge candidates with Euclidean color distance deduplication
+    all_candidates = accent_candidates + dominant_candidates
     unique_colors: List[ExtractedColor] = []
-    for col in extracted:
+    for col in all_candidates:
         is_too_close = False
         for chosen in unique_colors:
             dr = col.r - chosen.r
             dg = col.g - chosen.g
             db = col.b - chosen.b
             dist = math.sqrt(dr * dr + dg * dg + db * db)
-            if dist < 32:
+            if dist < 28:
                 is_too_close = True
                 break
         if not is_too_close:
             unique_colors.append(col)
-        if len(unique_colors) >= num_colors:
+        if len(unique_colors) >= num_colors + 3:
             break
 
-    unique_colors.sort(key=lambda c: (c.vibrancy * 1.5 + (1.0 if 0.25 <= c.luminance <= 0.75 else 0.3)), reverse=True)
+    # Pass 3: Monochrome Fallback
+    # If image is truly black & white (max saturation < 0.12), provide vibrant aesthetic accent options
+    max_sat = max([c.saturation for c in unique_colors], default=0.0)
+    if max_sat < 0.14:
+        curated_vibrants = [
+            ExtractedColor((0, 136, 204), count=999),   # Telegram Azure Blue
+            ExtractedColor((255, 59, 48), count=998),   # Electric Crimson Red
+            ExtractedColor((142, 82, 234), count=997),  # Cyber Purple
+            ExtractedColor((0, 229, 255), count=996),   # Neon Cyan
+            ExtractedColor((48, 164, 108), count=995),  # Emerald Mint
+        ]
+        # Insert curated accents at top
+        unique_colors = curated_vibrants[:3] + unique_colors[:5]
+
+    unique_colors.sort(key=lambda c: (c.vibrancy * 2.2 + (1.0 if 0.25 <= c.luminance <= 0.75 else 0.3)), reverse=True)
     return unique_colors[:num_colors]
 
 
