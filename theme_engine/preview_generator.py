@@ -14,8 +14,6 @@ from theme_engine.color_extractor import ExtractedColor, rgb_to_hex
 def get_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     """Load bundled TrueType font with full Cyrillic support or system fallback."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Priority: Bundled fonts inside project
     bundled_bold = os.path.join(current_dir, "fonts", "DejaVuSans-Bold.ttf")
     bundled_reg = os.path.join(current_dir, "fonts", "DejaVuSans.ttf")
     
@@ -75,7 +73,7 @@ def render_theme_preview(
     screen_h = 820
     
     # Render Wallpaper into Chat Screen Area with PROPORTIONAL fit (NO STRETCHING)
-    chat_wall_h = screen_h - 65 - 65 # between top bar (65) and bottom bar (65)
+    chat_wall_h = screen_h - 65 - 65
     wall_crop = ImageOps.fit(wallpaper, (screen_w, chat_wall_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
     card.paste(wall_crop, (0, 65))
 
@@ -91,7 +89,7 @@ def render_theme_preview(
     draw.ellipse(avatar_box, fill=palette.primary_accent)
     draw.text((73, 20), "TG", fill=palette.unread_badge_text, font=get_font(15, bold=True))
 
-    # Title & Subtitle
+    # Title & Subtitle (Crisp noticeable white title)
     draw.text((115, 14), "Telegram Theme Studio", fill=palette.text_primary, font=font_title)
     draw.text((115, 38), "в сети", fill=palette.primary_accent, font=font_subtitle)
 
@@ -136,9 +134,9 @@ def render_theme_preview(
     in2_w, in2_h = 510, 85
     draw_rounded_rect(draw, (in2_x, in2_y, in2_x + in2_w, in2_y + in2_h), radius=16, fill=palette.in_bubble_bg)
     
-    # Reply bar inside bubble
+    # Reply bar inside bubble (Noticeable white author name!)
     draw.line([(in2_x + 16, in2_y + 12), (in2_x + 16, in2_y + 40)], fill=palette.primary_accent, width=3)
-    draw.text((in2_x + 26, in2_y + 10), "Telegram Theme Engine", fill=palette.primary_accent, font=get_font(13, bold=True))
+    draw.text((in2_x + 26, in2_y + 10), "Telegram Theme Engine", fill=palette.text_primary, font=get_font(13, bold=True))
     draw.text((in2_x + 26, in2_y + 26), "Android (.attheme) + PC (.tdesktop-theme)", fill=palette.text_secondary, font=font_subtitle)
     
     draw.text((in2_x + 16, in2_y + 50), "Готово к установке в 1 клик на любом устройстве!", fill=palette.in_bubble_text, font=font_body)
@@ -171,7 +169,6 @@ def render_theme_preview(
     draw.rectangle([(0, screen_h), (width, height)], fill=swatch_bg)
     draw.line([(0, screen_h), (width, screen_h)], fill=palette.separator_line, width=1)
 
-    # Title for Palette
     mode_titles = {
         "dark": "🌙 Тёмная тема (Dark)",
         "light": "☀️ Светлая тема (Light)",
@@ -180,7 +177,6 @@ def render_theme_preview(
     mode_label = mode_titles.get(palette.mode, "🎨 Пользовательская тема")
     draw.text((25, screen_h + 12), f"Палитра темы — {mode_label}", fill=palette.text_primary, font=get_font(15, bold=True))
 
-    # 6 Swatch tiles
     swatches_data = [
         ("Акцент 1", palette.primary_accent, palette.hex_primary_accent),
         ("Акцент 2", palette.secondary_accent, palette.hex_secondary_accent),

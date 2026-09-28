@@ -15,6 +15,7 @@ from theme_engine.color_extractor import rgb_to_hex, blend_colors
 def generate_desktop_palette_text(palette: ResolvedThemePalette) -> str:
     """
     Generate the colors.tdesktop-theme file content in standard Telegram Desktop format.
+    Ensures nicknames are crisp noticeable white (not colored).
     """
     is_dark = palette.mode in ("dark", "amoled")
 
@@ -24,7 +25,6 @@ def generate_desktop_palette_text(palette: ResolvedThemePalette) -> str:
             return f"{base}{a:02x}"
         return base
 
-    # Construct complete dictionary of desktop theme variables
     d = {
         # Window & Basics
         "windowBg": h(palette.bg_color),
@@ -43,7 +43,7 @@ def generate_desktop_palette_text(palette: ResolvedThemePalette) -> str:
         # Top Bar
         "topBarBg": h(palette.topbar_bg),
         
-        # Dialogs / Left Chat List
+        # Dialogs / Left Chat List (Nicknames are crisp noticeable white)
         "dialogsBg": h(palette.dialogs_bg),
         "dialogsBgOver": h(palette.bg_surface),
         "dialogsBgActive": h(blend_colors(palette.bg_surface, palette.primary_accent, 0.18)),
@@ -72,10 +72,12 @@ def generate_desktop_palette_text(palette: ResolvedThemePalette) -> str:
         "dialogsUnreadFgMutedOver": h(palette.bg_surface),
         "dialogsUnreadFgMutedActive": h(palette.bg_surface),
         
-        # Incoming Messages
+        # Incoming Messages (Sender names & reply names are crisp noticeable white)
         "msgInBg": h(palette.in_bubble_bg),
         "msgInBgSelected": h(blend_colors(palette.in_bubble_bg, palette.primary_accent, 0.2)),
         "msgInFg": h(palette.in_bubble_text),
+        "msgInNameFg": h(palette.text_primary),
+        "msgInReplyName": h(palette.text_primary),
         "msgInDateFg": h(palette.in_bubble_time),
         "msgInDateFgSelected": h(palette.in_bubble_text),
         "msgInReplyBarColor": h(palette.in_bubble_reply_bar),
@@ -86,6 +88,8 @@ def generate_desktop_palette_text(palette: ResolvedThemePalette) -> str:
         "msgOutBg": h(palette.out_bubble_bg),
         "msgOutBgSelected": h(blend_colors(palette.out_bubble_bg, (255, 255, 255) if is_dark else (0, 0, 0), 0.15)),
         "msgOutFg": h(palette.out_bubble_text),
+        "msgOutNameFg": h(palette.out_bubble_text),
+        "msgOutReplyName": h(palette.out_bubble_text),
         "msgOutDateFg": h(palette.out_bubble_time),
         "msgOutDateFgSelected": h(palette.out_bubble_text),
         "msgOutReplyBarColor": h(palette.out_bubble_reply_bar),
@@ -155,12 +159,9 @@ def generate_desktop_theme(
     
     bio = io.BytesIO()
     with zipfile.ZipFile(bio, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # Write color palette definition
         zf.writestr("colors.tdesktop-theme", palette_text.encode("utf-8"))
-        
-        # Write wallpaper if available
         if wallpaper_image is not None:
-            jpg_bytes = get_wallpaper_jpeg_bytes(wallpaper_image, quality=90)
+            jpg_bytes = get_wallpaper_jpeg_bytes(wallpaper_image, quality=98, subsampling=0)
             zf.writestr("background.jpg", jpg_bytes)
             
     return bio.getvalue()

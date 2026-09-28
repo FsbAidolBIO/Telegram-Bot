@@ -1,6 +1,6 @@
 """
 Telegram Android Theme Generator (.attheme format).
-Generates compliant Android theme files with full UI color mapping and embedded wallpaper.
+Generates compliant Android theme files with crisp white/contrasting nicknames and titles.
 """
 
 from typing import Tuple, Dict, Any, Optional
@@ -26,7 +26,7 @@ def generate_android_theme(
 ) -> bytes:
     """
     Generate a complete .attheme binary/text file for Telegram Android.
-    Complies with standard Telegram Android format including WPS/WPE wallpaper markers.
+    Ensures nicknames and sender names are crisp noticeable white (not colored/green).
     """
     is_dark = palette.mode in ("dark", "amoled")
     
@@ -39,6 +39,9 @@ def generate_android_theme(
     
     in_time = palette.in_bubble_time
     out_time = palette.out_bubble_time
+    
+    # Nicknames & Sender Names: crisp noticeable white in dark/amoled, high-contrast in light
+    nickname_color = c(palette.text_primary)
 
     # Construct complete Android theme dictionary
     theme_dict = {
@@ -69,11 +72,12 @@ def generate_android_theme(
         "divider": c(divider_color),
         "listSelector": ripple_color,
         
-        # Dialogs / Chat List
-        "chats_name": c(palette.text_primary),
+        # Dialogs / Chat List (Nicknames are noticeable white)
+        "chats_name": nickname_color,
+        "chats_nameArchived": nickname_color,
         "chats_message": c(palette.text_secondary),
         "chats_date": c(palette.text_secondary),
-        "chats_actionUser": c(palette.primary_accent),
+        "chats_actionUser": nickname_color,
         "chats_actionMessage": c(palette.text_secondary),
         "chats_unreadCounter": c(palette.unread_badge_bg),
         "chats_unreadCounterText": c(palette.unread_badge_text),
@@ -86,18 +90,23 @@ def generate_android_theme(
         "chats_menuItemText": c(palette.text_primary),
         "chats_menuItemIcon": c(palette.text_secondary),
         "chats_menuTopBackground": c(palette.bg_elevated),
-        "chats_menuName": c(palette.text_primary),
+        "chats_menuName": nickname_color,
         "chats_menuPhone": c(palette.text_secondary),
         
-        # Incoming Messages
+        # Incoming Messages & Sender Names in Groups/Replies (Crisp noticeable white)
         "chat_inBubble": c(palette.in_bubble_bg),
         "chat_inBubbleSelected": c(blend_colors(palette.in_bubble_bg, palette.primary_accent, 0.15)),
         "chat_inText": c(palette.in_bubble_text),
-        "chat_inTimeText": c(in_time),
-        "chat_inSentCheck": c(palette.primary_accent),
-        "chat_inReplyName": c(palette.primary_accent),
+        "chat_inName": nickname_color,
+        "chat_inNameText": nickname_color,
+        "chat_inReplyName": nickname_color,
         "chat_inReplyMessageText": c(palette.in_bubble_text),
         "chat_inReplyLine": c(palette.primary_accent),
+        "chat_inForwardedName": nickname_color,
+        "chat_inViaBotName": nickname_color,
+        "chat_inContactNameText": nickname_color,
+        "chat_inTimeText": c(in_time),
+        "chat_inSentCheck": c(palette.primary_accent),
         "chat_inLinkSelection": c(palette.primary_accent, 40),
         "chat_inMenu": c(in_time),
         "chat_inViews": c(in_time),
@@ -108,12 +117,15 @@ def generate_android_theme(
         "chat_outBubble": c(palette.out_bubble_bg),
         "chat_outBubbleSelected": c(blend_colors(palette.out_bubble_bg, (255, 255, 255) if is_dark else (0, 0, 0), 0.12)),
         "chat_outText": c(palette.out_bubble_text),
-        "chat_outTimeText": c(out_time),
-        "chat_outSentCheck": c(out_time),
-        "chat_outSentCheckSelected": c(palette.out_bubble_text),
+        "chat_outName": c(palette.out_bubble_text),
         "chat_outReplyName": c(palette.out_bubble_text),
         "chat_outReplyMessageText": c(palette.out_bubble_text),
         "chat_outReplyLine": c(palette.out_bubble_reply_bar),
+        "chat_outForwardedName": c(palette.out_bubble_text),
+        "chat_outViaBotName": c(palette.out_bubble_text),
+        "chat_outTimeText": c(out_time),
+        "chat_outSentCheck": c(out_time),
+        "chat_outSentCheckSelected": c(palette.out_bubble_text),
         "chat_outLinkSelection": c((255, 255, 255), 40),
         "chat_outMenu": c(out_time),
         "chat_outViews": c(out_time),
@@ -129,7 +141,7 @@ def generate_android_theme(
         "chat_messagePanelVoiceBackground": c(palette.send_button),
         "chat_messagePanelShadow": c((0, 0, 0), 30),
         "chat_topPanelBackground": c(palette.input_bar_bg),
-        "chat_topPanelTitle": c(palette.primary_accent),
+        "chat_topPanelTitle": nickname_color,
         "chat_topPanelMessage": c(palette.text_secondary),
         "chat_topPanelLine": c(palette.primary_accent),
         "chat_topPanelClose": c(palette.text_secondary),
@@ -156,18 +168,15 @@ def generate_android_theme(
         "avatar_backgroundCyan": c(palette.secondary_accent)
     }
 
-    # If no wallpaper image, add solid chat_wallpaper color
     if wallpaper_image is None:
         theme_dict["chat_wallpaper"] = c(palette.bg_color)
 
-    # Format into key=value lines
     lines = [f"{key}={val}" for key, val in theme_dict.items()]
     theme_text = "\n".join(lines) + "\n"
     output_bytes = bytearray(theme_text.encode("utf-8"))
 
-    # If wallpaper is present, enclose JPEG bytes between WPS and WPE markers
     if wallpaper_image is not None:
-        jpg_bytes = get_wallpaper_jpeg_bytes(wallpaper_image, quality=92)
+        jpg_bytes = get_wallpaper_jpeg_bytes(wallpaper_image, quality=98, subsampling=0)
         output_bytes.extend(b"\nWPS\n")
         output_bytes.extend(jpg_bytes)
         output_bytes.extend(b"\nWPE\n")
