@@ -25,7 +25,7 @@ class ThemeConfig:
     secondary_idx: int = 1          # Index for secondary accent
     bubble_style: str = "vibrant"   # "vibrant", "dual", "soft", "glass", "minimal"
     chat_tint: str = "rich"         # "rich" (22%), "medium" (14%), "subtle" (6%), "clean" (0%)
-    wallpaper_mode: str = "blurred" # "blurred", "fit_blur", "cover", "dimmed", "gradient", "solid"
+    wallpaper_mode: str = "original"# "original", "dimmed", "blurred", "gradient", "solid"
     brightness_offset: int = 0      # -30 to +30 percent
     contrast_boost: bool = False
     custom_accent_hex: Optional[str] = None
@@ -37,7 +37,7 @@ class ThemeConfig:
         return self.mode
 
     def cycle_wallpaper(self) -> str:
-        wallpapers = ["blurred", "fit_blur", "cover", "dimmed", "gradient", "solid"]
+        wallpapers = ["original", "dimmed", "blurred", "gradient", "solid"]
         next_idx = (wallpapers.index(self.wallpaper_mode) + 1) % len(wallpapers) if self.wallpaper_mode in wallpapers else 0
         self.wallpaper_mode = wallpapers[next_idx]
         return self.wallpaper_mode
@@ -152,29 +152,23 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
             ExtractedColor((247, 104, 8))
         ]
 
-    # Determine mode
     mode = config.mode
     if mode == "auto":
         mode = "light" if is_image_light else "dark"
 
-    # Sort colors by vibrancy for accents
     vibrant_sorted = sorted(extracted_colors, key=lambda c: c.vibrancy, reverse=True)
     
-    # Pick primary accent
     if config.custom_accent_hex:
         primary_raw = hex_to_rgb(config.custom_accent_hex)
     else:
         accent_i = config.accent_idx % len(vibrant_sorted)
         primary_raw = vibrant_sorted[accent_i].rgb
 
-    # Pick secondary accent
     sec_i = (config.accent_idx + 1) % len(vibrant_sorted)
     secondary_raw = vibrant_sorted[sec_i].rgb
 
-    # Dominant base color for atmospheric tinting
     base_raw = extracted_colors[0].rgb
 
-    # Determine tint intensity factor
     tint_factors = {
         "rich": 0.22,
         "medium": 0.14,
@@ -185,9 +179,7 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
     b_offset = config.brightness_offset / 100.0
 
     if mode == "amoled":
-        # OLED True Black Theme
         bg_color = (0, 0, 0)
-        # Give surfaces a subtle atmospheric chromatic glow
         bg_surface = blend_colors((16, 16, 20), primary_raw, tint_factor * 0.4)
         bg_elevated = blend_colors((26, 26, 32), primary_raw, tint_factor * 0.6)
         topbar_bg = (0, 0, 0)
@@ -206,7 +198,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
         input_bar_text = (255, 255, 255)
         input_bar_hint = (125, 130, 145)
 
-        # Bubbles
         if config.bubble_style == "vibrant":
             out_bubble_bg = primary_accent
             out_bubble_text = get_best_text_color(out_bubble_bg)
@@ -227,21 +218,18 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
             out_bubble_text = (255, 255, 255)
             in_bubble_bg = (20, 20, 24)
             in_bubble_text = (240, 240, 240)
-        else: # minimal
+        else:
             out_bubble_bg = (32, 32, 38)
             out_bubble_text = (255, 255, 255)
             in_bubble_bg = (18, 18, 22)
             in_bubble_text = (235, 235, 235)
 
     elif mode == "dark":
-        # Deep Atmospheric Dark Theme
-        # Blend base dark neutral with screenshot's dominant tone
         tinted_dark = blend_colors((18, 22, 28), base_raw, tint_factor)
         
         l_bg = max(0.06, min(0.28, 0.11 + b_offset))
         bg_color = adjust_lightness(tinted_dark, l_bg)
         
-        # Surfaces inherit rich chromatic depth
         bg_surface = blend_colors(bg_color, primary_raw, 0.08)
         bg_surface = blend_colors(bg_surface, (255, 255, 255), 0.07)
         bg_elevated = blend_colors(bg_surface, (255, 255, 255), 0.08)
@@ -282,20 +270,18 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
             out_bubble_text = (255, 255, 255)
             in_bubble_bg = bg_surface
             in_bubble_text = text_primary
-        else: # minimal
+        else:
             out_bubble_bg = bg_elevated
             out_bubble_text = text_primary
             in_bubble_bg = bg_surface
             in_bubble_text = text_primary
 
     else:
-        # Crisp Chromatic Light Theme (Not blinding white! Atmospheric soft tints)
         tinted_light = blend_colors((242, 245, 250), base_raw, tint_factor * 0.7)
         
         l_bg = max(0.88, min(0.98, 0.95 + b_offset))
         bg_color = adjust_lightness(tinted_light, l_bg)
         
-        # Surfaces: delicate atmospheric tint
         bg_surface = blend_colors((255, 255, 255), primary_raw, 0.04)
         bg_elevated = blend_colors(bg_surface, (0, 0, 0), 0.04)
         topbar_bg = bg_surface
@@ -334,13 +320,12 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
             out_bubble_text = (20, 25, 35)
             in_bubble_bg = bg_surface
             in_bubble_text = text_primary
-        else: # minimal
+        else:
             out_bubble_bg = blend_colors(bg_surface, primary_accent, 0.15)
             out_bubble_text = text_primary
             in_bubble_bg = bg_surface
             in_bubble_text = text_primary
 
-    # Compute time & reply bar colors
     in_bubble_time = blend_colors(in_bubble_text, in_bubble_bg, 0.40)
     in_bubble_reply_bar = primary_accent
 

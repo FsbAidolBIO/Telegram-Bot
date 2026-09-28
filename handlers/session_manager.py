@@ -39,9 +39,9 @@ class UserThemeSession:
         self.extracted_colors = extract_palette_from_image(self.original_image, num_colors=8)
         self.is_image_light = detect_image_brightness(self.original_image)
         
-        # Default config based on detected brightness
+        # Default config: original image on full screen (no blur)
         initial_mode = "light" if self.is_image_light else "dark"
-        self.config = ThemeConfig(mode=initial_mode, wallpaper_mode="blurred")
+        self.config = ThemeConfig(mode=initial_mode, wallpaper_mode="original")
 
     def touch(self):
         """Update last accessed timestamp."""
@@ -70,7 +70,6 @@ class UserThemeSession:
         if not clean_hex.startswith("#"):
             clean_hex = "#" + clean_hex
         self.config.custom_accent_hex = clean_hex
-        # Also add to extracted colors if not present
         rgb = hex_to_rgb(clean_hex)
         custom_color = ExtractedColor(rgb, count=999)
         if not any(c.hex.lower() == clean_hex.lower() for c in self.extracted_colors):
@@ -81,7 +80,7 @@ class UserThemeSession:
 
 class SessionManager:
     """Manages all active user sessions with automatic expiration."""
-    def __init__(self, ttl_seconds: int = 7200): # 2 hours TTL
+    def __init__(self, ttl_seconds: int = 7200):
         self._sessions: Dict[int, UserThemeSession] = {}
         self.ttl_seconds = ttl_seconds
 
@@ -107,5 +106,4 @@ class SessionManager:
             del self._sessions[uid]
 
 
-# Global session manager instance
 session_manager = SessionManager()

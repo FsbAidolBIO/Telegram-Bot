@@ -24,10 +24,9 @@ def get_theme_editor_keyboard(
     mode_text = mode_labels.get(config.mode, "🌓 Режим")
 
     wallpaper_labels = {
-        "blurred": "✨ Размытие",
-        "fit_blur": "🖼 Вписать (Без обрезки)",
-        "cover": "📐 Заполнить (Cover)",
+        "original": "🖼 Исходник (Чёткий)",
         "dimmed": "🌑 Затемнение",
+        "blurred": "✨ Размытие (Blur)",
         "gradient": "🌈 Градиент",
         "solid": "🎨 Сплошной"
     }
@@ -66,10 +65,9 @@ def get_theme_editor_keyboard(
             InlineKeyboardButton(text="➖ Темнее (-10%)", callback_data="brightness_minus"),
             InlineKeyboardButton(text="➕ Светлее (+10%)", callback_data="brightness_plus")
         ],
-        # Row 4: Direct Interactive Color Palette Grid (Top 4 vibrant colors)
     ]
 
-    # Add quick color buttons
+    # Row 4: Direct Interactive Color Palette Grid (Top 4 vibrant colors)
     color_buttons = []
     for i, col in enumerate(extracted_colors[:4]):
         is_active = (config.custom_accent_hex is None and config.accent_idx == i)
@@ -78,7 +76,6 @@ def get_theme_editor_keyboard(
         color_buttons.append(InlineKeyboardButton(text=btn_text, callback_data=f"set_accent_{i}"))
     
     if color_buttons:
-        # 2 per row
         keyboard.append(color_buttons[:2])
         if len(color_buttons) > 2:
             keyboard.append(color_buttons[2:4])
