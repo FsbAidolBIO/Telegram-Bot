@@ -1,14 +1,16 @@
 """
 Image reception, file processing, and custom hex color handlers.
+Optimized with non-blocking async execution and instant rendering.
 """
 
 from aiogram import Router, F, Bot
 from aiogram.types import Message, BufferedInputFile
 import io
+import asyncio
 import logging
 from handlers.session_manager import session_manager
 from theme_engine.preview_generator import render_preview_to_bytes
-from theme_engine.color_extractor import is_valid_hex
+from theme_engine.color_extractor import is_valid_hex, calculate_contrast_ratio, get_wcag_badge
 from handlers.keyboards import get_theme_editor_keyboard
 
 logger = logging.getLogger(__name__)
@@ -28,20 +30,25 @@ async def handle_photo(message: Message, bot: Bot):
         await bot.download(photo, destination=file_io)
         image_bytes = file_io.getvalue()
         
-        session = session_manager.create_session(user_id, image_bytes)
+        # Async session creation and color extraction
+        session = await asyncio.to_thread(session_manager.create_session, user_id, image_bytes)
         palette = session.get_palette()
-        wallpaper = session.get_wallpaper(width=800, height=820)
         
-        preview_bytes = render_preview_to_bytes(palette, wallpaper, session.extracted_colors)
+        # Async preview generation
+        preview_bytes = await asyncio.to_thread(session.get_rendered_preview_bytes)
         photo_file = BufferedInputFile(preview_bytes, filename="theme_preview.jpg")
         
+        contrast = calculate_contrast_ratio(palette.in_bubble_text, palette.in_bubble_bg)
+        wcag_badge = get_wcag_badge(contrast)
+
         caption = (
             "✨ <b>Тема успешно сгенерирована!</b>\n\n"
             f"• <b>Режим:</b> {session.config.mode.upper()}\n"
             f"• <b>Основной акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
             f"• <b>Второй цвет:</b> <code>{palette.hex_secondary_accent.upper()}</code>\n"
             f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n"
-            f"• <b>Обои:</b> {session.config.wallpaper_mode}\n\n"
+            f"• <b>Обои:</b> {session.config.wallpaper_mode}\n"
+            f"• <b>Читаемость:</b> {wcag_badge}\n\n"
             "🎛 <i>Выберите цвет или настройте тему на кнопках ниже:</i>\n"
             "💡 <i>(Вы также можете отправить свой HEX-код сообщением, например <code>#FF5500</code>)</i>"
         )
@@ -70,8 +77,8 @@ async def handle_document(message: Message, bot: Bot):
     if not is_image:
         return
         
-    if doc.file_size and doc.file_size > 20 * 1024 * 1024:
-        await message.answer("⚠️ Файл слишком большой. Пожалуйста, отправьте изображение размером до 20 МБ.")
+    if doc.file_size and doc.file_size > 25 * 1024 * 1024:
+        await message.answer("⚠️ Файл слишком большой. Пожалуйста, отправьте изображение размером до 25 МБ.")
         return
 
     user_id = message.from_user.id
@@ -82,20 +89,23 @@ async def handle_document(message: Message, bot: Bot):
         await bot.download(doc, destination=file_io)
         image_bytes = file_io.getvalue()
         
-        session = session_manager.create_session(user_id, image_bytes)
+        session = await asyncio.to_thread(session_manager.create_session, user_id, image_bytes)
         palette = session.get_palette()
-        wallpaper = session.get_wallpaper(width=800, height=820)
         
-        preview_bytes = render_preview_to_bytes(palette, wallpaper, session.extracted_colors)
+        preview_bytes = await asyncio.to_thread(session.get_rendered_preview_bytes)
         photo_file = BufferedInputFile(preview_bytes, filename="theme_preview.jpg")
         
+        contrast = calculate_contrast_ratio(palette.in_bubble_text, palette.in_bubble_bg)
+        wcag_badge = get_wcag_badge(contrast)
+
         caption = (
             "✨ <b>Тема успешно сгенерирована из файла!</b>\n\n"
             f"• <b>Режим:</b> {session.config.mode.upper()}\n"
             f"• <b>Основной акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
             f"• <b>Второй цвет:</b> <code>{palette.hex_secondary_accent.upper()}</code>\n"
             f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n"
-            f"• <b>Обои:</b> {session.config.wallpaper_mode}\n\n"
+            f"• <b>Обои:</b> {session.config.wallpaper_mode}\n"
+            f"• <b>Читаемость:</b> {wcag_badge}\n\n"
             "🎛 <i>Выберите цвет или настройте тему:</i>"
         )
         
@@ -106,47 +116,40 @@ async def handle_document(message: Message, bot: Bot):
             await status_msg.delete()
         except Exception:
             pass
-        
+            
     except Exception as e:
         logger.exception("Error processing document image: %s", e)
-        await status_msg.edit_text(f"❌ Не удалось обработать файл: {str(e)}")
+        await status_msg.edit_text(f"❌ Произошла ошибка: {str(e)}")
 
 
-@router.message(F.text & ~F.text.startswith("/"))
-async def handle_custom_text(message: Message):
-    """Handles custom hex color input (e.g. #FF5500 or FF0055)."""
-    text = message.text.strip()
+@router.message(F.text)
+async def handle_custom_hex_or_text(message: Message):
+    """Handles direct HEX color input (#RRGGBB)."""
+    text = (message.text or "").strip()
     user_id = message.from_user.id
+    session = session_manager.get_session(user_id)
     
+    if not session:
+        return
+        
     if is_valid_hex(text):
-        session = session_manager.get_session(user_id)
-        if not session:
-            await message.answer(
-                "🎨 Вы отправили HEX-цвет, но сначала отправьте скриншот или фото, чтобы создать тему!\n"
-                "Либо введите /random для случайной темы."
-            )
-            return
-            
         success = session.set_custom_accent(text)
         if success:
             palette = session.get_palette()
-            wallpaper = session.get_wallpaper(width=800, height=820)
-            preview_bytes = render_preview_to_bytes(palette, wallpaper, session.extracted_colors)
+            preview_bytes = await asyncio.to_thread(session.get_rendered_preview_bytes)
             photo_file = BufferedInputFile(preview_bytes, filename="theme_preview.jpg")
             
+            contrast = calculate_contrast_ratio(palette.in_bubble_text, palette.in_bubble_bg)
+            wcag_badge = get_wcag_badge(contrast)
+
             caption = (
-                f"🎯 <b>Применен пользовательский акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n\n"
+                f"🎨 <b>Пользовательский акцент установлен:</b> <code>{text.upper()}</code>\n\n"
                 f"• <b>Режим:</b> {session.config.mode.upper()}\n"
-                f"• <b>Фон:</b> <code>{palette.hex_bg.upper()}</code>\n"
-                f"• <b>Обои:</b> {session.config.wallpaper_mode}\n\n"
-                "🎛 <i>Продолжайте настройку или скачайте файл темы:</i>"
+                f"• <b>Основной акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
+                f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n"
+                f"• <b>Читаемость:</b> {wcag_badge}\n\n"
+                "🎛 <i>Вы можете продолжить настройку на кнопках:</i>"
             )
+            
             kb = get_theme_editor_keyboard(session.config, palette, session.extracted_colors)
             await message.answer_photo(photo_file, caption=caption, parse_mode="HTML", reply_markup=kb)
-        else:
-            await message.answer("⚠️ Не удалось применить HEX-код. Формат: <code>#RRGGBB</code> (например, <code>#3A86FF</code>).", parse_mode="HTML")
-    else:
-        await message.answer(
-            "📸 <b>Отправьте скриншот или фото</b>, чтобы создать из него тему!\n"
-            "Либо используйте команду /random для демонстрации."
-        )

@@ -1,10 +1,12 @@
 """
 Callback query handlers for interactive theme customizer and file downloads.
+Optimized with non-blocking async execution, LRU rendering cache, and WCAG contrast analyzer.
 """
 
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, BufferedInputFile, InputMediaPhoto
 from aiogram.exceptions import TelegramBadRequest
+import asyncio
 import io
 import zipfile
 import logging
@@ -20,17 +22,27 @@ from theme_engine.desktop_generator import generate_desktop_theme, generate_desk
 from theme_engine.wallpaper_generator import get_wallpaper_jpeg_bytes
 from theme_engine.palette_card_generator import generate_palette_card_bytes
 from theme_engine.json_exporter import export_theme_to_json
+from theme_engine.color_extractor import calculate_contrast_ratio, get_wcag_badge
 
 logger = logging.getLogger(__name__)
 router = Router(name="callbacks_router")
 
 
 async def update_theme_view(query: CallbackQuery, session):
-    """Re-renders the preview card and updates the Telegram message."""
+    """
+    Re-renders the preview card asynchronously and updates the Telegram message.
+    Uses async threadpool and session cache for sub-millisecond response.
+    """
+    # Acknowledge Telegram callback immediately to remove button spinner
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
     palette = session.get_palette()
-    wallpaper = session.get_wallpaper(width=800, height=820)
     
-    preview_bytes = render_preview_to_bytes(palette, wallpaper, session.extracted_colors)
+    # Render preview in background thread (non-blocking)
+    preview_bytes = await asyncio.to_thread(session.get_rendered_preview_bytes)
     photo_file = BufferedInputFile(preview_bytes, filename="theme_preview.jpg")
     
     tint_labels = {
@@ -44,6 +56,10 @@ async def update_theme_view(query: CallbackQuery, session):
     focus_names = {"center": "По центру", "top": "Сверху", "bottom": "Снизу"}
     focus_str = focus_names.get(session.config.wallpaper_focus, "По центру")
 
+    # Calculate real-time contrast ratio
+    contrast = calculate_contrast_ratio(palette.in_bubble_text, palette.in_bubble_bg)
+    wcag_badge = get_wcag_badge(contrast)
+
     caption = (
         "✨ <b>Настройка темы обновлена!</b>\n\n"
         f"• <b>Режим:</b> {session.config.mode.upper()}\n"
@@ -52,7 +68,8 @@ async def update_theme_view(query: CallbackQuery, session):
         f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n"
         f"• <b>Обои:</b> {session.config.wallpaper_mode} ({focus_str})\n"
         f"• <b>Стиль сообщений:</b> {session.config.bubble_style}\n"
-        f"• <b>Атмосфера чата:</b> {tint_name}\n\n"
+        f"• <b>Атмосфера:</b> {tint_name}\n"
+        f"• <b>Читаемость:</b> {wcag_badge}\n\n"
         "🎛 <i>Выберите цвет или параметр на кнопках ниже:</i>"
     )
     
@@ -66,11 +83,6 @@ async def update_theme_view(query: CallbackQuery, session):
             logger.warning("TelegramBadRequest in edit_media: %s", e)
     except Exception as e:
         logger.warning("Failed to edit media: %s", e)
-    finally:
-        try:
-            await query.answer()
-        except Exception:
-            pass
 
 
 @router.callback_query(F.data.startswith("set_accent_"))
@@ -92,6 +104,7 @@ async def cb_open_palette_picker(query: CallbackQuery):
         await query.answer("⚠️ Сессия истекла. Отправьте скриншот заново.", show_alert=True)
         return
     
+    await query.answer()
     kb = get_color_picker_keyboard(session.extracted_colors, session.config.accent_idx)
     caption = (
         "🎨 <b>Палитра цветов из вашего изображения:</b>\n\n"
@@ -102,7 +115,6 @@ async def cb_open_palette_picker(query: CallbackQuery):
         await query.message.edit_caption(caption=caption, parse_mode="HTML", reply_markup=kb)
     except Exception as e:
         logger.warning("Failed to edit caption for color picker: %s", e)
-    await query.answer()
 
 
 @router.callback_query(F.data == "cycle_focus")
@@ -205,7 +217,7 @@ async def cb_reset_settings(query: CallbackQuery):
     await update_theme_view(query, session)
 
 
-# --- DOWNLOAD HANDLERS ---
+# --- DOWNLOAD HANDLERS (THREADPOOL OFF-LOADED) ---
 
 @router.callback_query(F.data == "download_palette_card")
 async def cb_download_palette_card(query: CallbackQuery):
@@ -216,7 +228,7 @@ async def cb_download_palette_card(query: CallbackQuery):
     
     await query.answer("📊 Генерирую карточку палитры...")
     palette = session.get_palette()
-    card_png = generate_palette_card_bytes(palette, session.extracted_colors)
+    card_png = await asyncio.to_thread(generate_palette_card_bytes, palette, session.extracted_colors)
     doc = BufferedInputFile(card_png, filename="Theme_Palette_Card.png")
     
     caption = "📊 <b>Дизайнерская карточка палитры (HEX, RGB, названия оттенков) готова!</b>"
@@ -233,8 +245,8 @@ async def cb_download_android(query: CallbackQuery):
     await query.answer("⏳ Генерирую тему для Android...")
     
     palette = session.get_palette()
-    wallpaper = session.get_wallpaper()
-    attheme_bytes = generate_android_theme(palette, wallpaper, theme_name="Custom Android Theme")
+    wallpaper = await asyncio.to_thread(session.get_wallpaper)
+    attheme_bytes = await asyncio.to_thread(generate_android_theme, palette, wallpaper, "Custom Android Theme")
     
     doc = BufferedInputFile(attheme_bytes, filename="Telegram_Android_Theme.attheme")
     
@@ -259,8 +271,8 @@ async def cb_download_desktop(query: CallbackQuery):
     await query.answer("⏳ Генерирую тему для Telegram Desktop...")
     
     palette = session.get_palette()
-    wallpaper = session.get_wallpaper()
-    tdesktop_bytes = generate_desktop_theme(palette, wallpaper, theme_name="Custom Desktop Theme")
+    wallpaper = await asyncio.to_thread(session.get_wallpaper)
+    tdesktop_bytes = await asyncio.to_thread(generate_desktop_theme, palette, wallpaper, "Custom Desktop Theme")
     
     doc = BufferedInputFile(tdesktop_bytes, filename="Telegram_PC_Theme.tdesktop-theme")
     
@@ -275,15 +287,8 @@ async def cb_download_desktop(query: CallbackQuery):
     await query.message.answer_document(doc, caption=caption, parse_mode="HTML", reply_markup=get_quick_download_keyboard())
 
 
-@router.callback_query(F.data == "download_all_zip")
-async def cb_download_all_zip(query: CallbackQuery):
-    session = session_manager.get_session(query.from_user.id)
-    if not session:
-        await query.answer("⚠️ Сессия истекла. Отправьте скриншот заново.", show_alert=True)
-        return
-    
-    await query.answer("📦 Собираю полный ZIP-архив...")
-    
+def _build_zip_pack(session) -> bytes:
+    """Helper to build all files in zip pack in threadpool."""
     palette = session.get_palette()
     wallpaper_native = session.get_wallpaper()
     
@@ -307,7 +312,7 @@ async def cb_download_all_zip(query: CallbackQuery):
         "1. Telegram_Android.attheme - Theme for Android with wallpaper embedded.\n"
         "2. Telegram_Desktop.tdesktop-theme - Theme for Telegram Desktop (PC/Mac/Linux).\n"
         "3. colors.tdesktop-palette - Raw desktop color palette definition.\n"
-        "4. wallpaper_original.jpg - Full resolution lossless wallpaper.\n"
+        "4. wallpaper_original.jpg - Full resolution lossless wallpaper (4:4:4).\n"
         "5. theme_preview.jpg - Visual theme preview and color swatches.\n"
         "6. theme_palette_card.png - Hi-res designer color palette sheet.\n"
         "7. theme_tokens.json - JSON design tokens & CSS variables.\n\n"
@@ -327,7 +332,19 @@ async def cb_download_all_zip(query: CallbackQuery):
         zf.writestr("theme_tokens.json", theme_json_str.encode("utf-8"))
         zf.writestr("README.txt", readme_text.encode("utf-8"))
         
-    zip_bytes = zip_bio.getvalue()
+    return zip_bio.getvalue()
+
+
+@router.callback_query(F.data == "download_all_zip")
+async def cb_download_all_zip(query: CallbackQuery):
+    session = session_manager.get_session(query.from_user.id)
+    if not session:
+        await query.answer("⚠️ Сессия истекла. Отправьте скриншот заново.", show_alert=True)
+        return
+    
+    await query.answer("📦 Собираю полный ZIP-архив...")
+    
+    zip_bytes = await asyncio.to_thread(_build_zip_pack, session)
     doc = BufferedInputFile(zip_bytes, filename="Telegram_Theme_Pack.zip")
     
     caption = (

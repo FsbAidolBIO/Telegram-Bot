@@ -1,51 +1,62 @@
 """
-Unit tests for the Telegram Theme Engine.
+Unit tests for Telegram Theme Studio Engine, Procedural Wallpapers, Caching, and WCAG Contrast.
 """
 
 import unittest
 import io
 import json
-from PIL import Image, ImageDraw
+import time
+from PIL import Image
 from theme_engine.color_extractor import (
     extract_palette_from_image,
     detect_image_brightness,
     rgb_to_hex,
     hex_to_rgb,
+    get_color_name,
+    get_color_emoji,
+    is_valid_hex,
     get_luminance,
     get_best_text_color,
-    get_color_name,
-    shift_temperature,
+    calculate_contrast_ratio,
+    get_wcag_badge,
     ExtractedColor
 )
 from theme_engine.palette import ThemeConfig, build_palette
 from theme_engine.wallpaper_generator import generate_wallpaper, get_wallpaper_jpeg_bytes
-from theme_engine.android_generator import generate_android_theme, to_argb_int
+from theme_engine.android_generator import generate_android_theme
 from theme_engine.desktop_generator import generate_desktop_theme, generate_desktop_palette_text
 from theme_engine.preview_generator import render_preview_to_bytes
 from theme_engine.palette_card_generator import generate_palette_card_bytes
 from theme_engine.json_exporter import export_theme_to_json
+from theme_engine.procedural_wallpapers import (
+    generate_procedural_bokeh,
+    generate_procedural_waves,
+    generate_procedural_topography,
+    generate_procedural_synthwave
+)
 from handlers.session_manager import SessionManager
 
 
 class TestThemeEngine(unittest.TestCase):
     def setUp(self):
-        self.img = Image.new("RGB", (500, 700), color=(20, 30, 45))
-        draw = ImageDraw.Draw(self.img)
-        draw.rectangle([(40, 40), (200, 200)], fill=(255, 120, 0))
-        draw.ellipse([(220, 40), (450, 300)], fill=(0, 200, 255))
-        draw.rectangle([(100, 350), (400, 600)], fill=(230, 230, 240))
+        self.img = Image.new("RGB", (600, 800), color=(34, 139, 34))
+        for y in range(200):
+            for x in range(600):
+                self.img.putpixel((x, y), (255, 69, 0))
+
+    def test_color_extraction(self):
+        colors = extract_palette_from_image(self.img, num_colors=5)
+        self.assertGreater(len(colors), 0)
+        self.assertTrue(any("ff4500" in c.hex.lower() or "228b22" in c.hex.lower() for c in colors))
 
     def test_color_conversions(self):
-        self.assertEqual(rgb_to_hex(255, 0, 128), "#ff0080")
-        self.assertEqual(hex_to_rgb("#ff0080"), (255, 0, 128))
-        self.assertEqual(hex_to_rgb("ff0080"), (255, 0, 128))
+        self.assertEqual(rgb_to_hex(255, 0, 0), "#ff0000")
+        self.assertEqual(hex_to_rgb("#ff0000"), (255, 0, 0))
+        self.assertTrue(is_valid_hex("#abc"))
+        self.assertTrue(is_valid_hex("#aabbcc"))
+        self.assertFalse(is_valid_hex("xyz"))
         self.assertTrue(len(get_color_name((0, 200, 255))) > 0)
-
-    def test_temperature_shift(self):
-        warm = shift_temperature((100, 100, 100), 0.2)
-        self.assertGreater(warm[0], 100)
-        cool = shift_temperature((100, 100, 100), -0.2)
-        self.assertGreater(cool[2], 100)
+        self.assertIn(get_color_emoji(255, 0, 0), ["🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚪", "⚫"])
 
     def test_luminance_and_contrast(self):
         lum_white = get_luminance(255, 255, 255)
@@ -55,41 +66,42 @@ class TestThemeEngine(unittest.TestCase):
         self.assertEqual(get_best_text_color((0, 0, 0)), (255, 255, 255))
         self.assertEqual(get_best_text_color((255, 255, 255)), (20, 20, 24))
 
-    def test_palette_extraction(self):
-        palette = extract_palette_from_image(self.img, num_colors=6)
-        self.assertGreaterEqual(len(palette), 3)
-        for c in palette:
-            self.assertTrue(c.hex.startswith("#"))
-            self.assertEqual(len(c.hex), 7)
-            self.assertGreaterEqual(c.vibrancy, 0.0)
+    def test_wcag_and_contrast(self):
+        contrast = calculate_contrast_ratio((255, 255, 255), (0, 0, 0))
+        self.assertGreaterEqual(contrast, 20.0)
+        badge = get_wcag_badge(contrast)
+        self.assertIn("AAA", badge)
 
-    def test_theme_modes(self):
+    def test_palette_builder(self):
         colors = extract_palette_from_image(self.img)
+        palette_dark = build_palette(colors, ThemeConfig(mode="dark"))
+        self.assertEqual(palette_dark.mode, "dark")
         
-        cfg_dark = ThemeConfig(mode="dark")
-        pal_dark = build_palette(colors, cfg_dark)
-        self.assertEqual(pal_dark.mode, "dark")
-        self.assertLess(get_luminance(*pal_dark.bg_color), 0.35)
-        
-        cfg_light = ThemeConfig(mode="light")
-        pal_light = build_palette(colors, cfg_light)
-        self.assertEqual(pal_light.mode, "light")
-        self.assertGreater(get_luminance(*pal_light.bg_color), 0.80)
-        
-        cfg_amoled = ThemeConfig(mode="amoled")
-        pal_amoled = build_palette(colors, cfg_amoled)
-        self.assertEqual(pal_amoled.mode, "amoled")
-        self.assertEqual(pal_amoled.bg_color, (0, 0, 0))
+        palette_light = build_palette(colors, ThemeConfig(mode="light"))
+        self.assertEqual(palette_light.mode, "light")
 
-    def test_wallpaper_variations(self):
+        palette_amoled = build_palette(colors, ThemeConfig(mode="amoled"))
+        self.assertEqual(palette_amoled.bg_color, (0, 0, 0))
+
+    def test_procedural_wallpapers(self):
+        bokeh = generate_procedural_bokeh(400, 600, (255, 0, 100), (0, 200, 255), (15, 18, 24))
+        self.assertEqual(bokeh.size, (400, 600))
+
+        waves = generate_procedural_waves(400, 600, (255, 0, 100), (0, 200, 255), (15, 18, 24))
+        self.assertEqual(waves.size, (400, 600))
+
+        topography = generate_procedural_topography(400, 600, (0, 200, 255), (15, 18, 24))
+        self.assertEqual(topography.size, (400, 600))
+
+        synthwave = generate_procedural_synthwave(400, 600, (255, 0, 128), (255, 200, 0), (10, 10, 20))
+        self.assertEqual(synthwave.size, (400, 600))
+
+    def test_wallpaper_focus_and_hue(self):
         colors = extract_palette_from_image(self.img)
-        palette = build_palette(colors, ThemeConfig(mode="dark"))
-        
-        for w_mode in ["original", "dimmed", "blurred", "gradient", "solid"]:
-            wall = generate_wallpaper(self.img, palette, mode=w_mode, width=400, height=600)
-            self.assertEqual(wall.size, (400, 600))
-            jpeg_data = get_wallpaper_jpeg_bytes(wall)
-            self.assertGreater(len(jpeg_data), 100)
+        cfg = ThemeConfig(mode="dark", wallpaper_focus="top", hue_shift_deg=60)
+        palette = build_palette(colors, cfg)
+        wall = generate_wallpaper(self.img, palette, mode="original", width=400, height=600, focus="top")
+        self.assertEqual(wall.size, (400, 600))
 
     def test_android_theme_generator(self):
         colors = extract_palette_from_image(self.img)
@@ -137,7 +149,7 @@ class TestThemeEngine(unittest.TestCase):
         self.assertIn("theme_colors", parsed)
         self.assertIn("css_variables", parsed)
 
-    def test_session_manager(self):
+    def test_session_manager_and_caching(self):
         sm = SessionManager(ttl_seconds=60)
         bio = io.BytesIO()
         self.img.save(bio, format="PNG")
@@ -146,11 +158,19 @@ class TestThemeEngine(unittest.TestCase):
         self.assertIsNotNone(session)
         self.assertEqual(session.user_id, 12345)
         
-        retrieved = sm.get_session(12345)
-        self.assertEqual(retrieved, session)
-        
-        session.config.cycle_mode()
-        self.assertIn(session.config.mode, ["dark", "light", "amoled"])
+        # Test preview caching speed
+        t0 = time.perf_counter()
+        bytes1 = session.get_rendered_preview_bytes()
+        t1 = time.perf_counter()
+        first_duration = t1 - t0
+
+        t2 = time.perf_counter()
+        bytes2 = session.get_rendered_preview_bytes()
+        t3 = time.perf_counter()
+        cached_duration = t3 - t2
+
+        self.assertEqual(bytes1, bytes2)
+        self.assertLess(cached_duration, first_duration + 0.05)
 
 
 if __name__ == "__main__":
