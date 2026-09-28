@@ -28,6 +28,10 @@ def get_theme_editor_keyboard(
         "dimmed": "🌑 Затемнение",
         "blurred": "✨ Размытие (Blur)",
         "gradient": "🌈 Градиент",
+        "bokeh": "✨ Боке (Огни)",
+        "waves": "🌊 Волны",
+        "topography": "🗺 Топография",
+        "synthwave": "🕹 Synthwave",
         "solid": "🎨 Сплошной"
     }
     wall_text = wallpaper_labels.get(config.wallpaper_mode, "🖼 Обои")

@@ -1,7 +1,7 @@
 """
 Theme Palette generator and color logic for Telegram themes.
 Handles mode switching (Dark, Light, AMOLED), chromatic chat atmosphere, bubble styling,
-wallpaper focus, and hue rotation.
+wallpaper focus, procedural patterns, and hue rotation.
 """
 
 from typing import List, Dict, Any, Tuple, Optional
@@ -37,7 +37,7 @@ class ThemeConfig:
     secondary_idx: int = 1          # Index for secondary accent
     bubble_style: str = "vibrant"   # "vibrant", "dual", "soft", "glass", "minimal"
     chat_tint: str = "rich"         # "rich" (22%), "medium" (14%), "subtle" (6%), "clean" (0%)
-    wallpaper_mode: str = "original"# "original", "dimmed", "blurred", "gradient", "solid"
+    wallpaper_mode: str = "original"# "original", "dimmed", "blurred", "gradient", "bokeh", "waves", "topography", "synthwave", "solid"
     wallpaper_focus: str = "center" # "center", "top", "bottom"
     hue_shift_deg: int = 0          # 0 to 330 deg
     brightness_offset: int = 0      # -30 to +30 percent
@@ -51,7 +51,7 @@ class ThemeConfig:
         return self.mode
 
     def cycle_wallpaper(self) -> str:
-        wallpapers = ["original", "dimmed", "blurred", "gradient", "solid"]
+        wallpapers = ["original", "dimmed", "blurred", "gradient", "bokeh", "waves", "topography", "synthwave", "solid"]
         next_idx = (wallpapers.index(self.wallpaper_mode) + 1) % len(wallpapers) if self.wallpaper_mode in wallpapers else 0
         self.wallpaper_mode = wallpapers[next_idx]
         return self.wallpaper_mode
@@ -191,7 +191,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
     secondary_raw = vibrant_sorted[sec_i].rgb
     base_raw = extracted_colors[0].rgb
 
-    # Apply Hue Shift if active
     if config.hue_shift_deg != 0:
         primary_raw = shift_hue(primary_raw, config.hue_shift_deg)
         secondary_raw = shift_hue(secondary_raw, config.hue_shift_deg)

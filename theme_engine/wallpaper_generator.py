@@ -1,7 +1,8 @@
 """
 Wallpaper processing and generation module for Telegram themes.
 Provides ultra-sharp lossless wallpaper rendering (subsampling=0, quality=98),
-focal point cropping (top/center/bottom), and preserves native resolution.
+focal point cropping (top/center/bottom), procedural artistic patterns (bokeh, waves, topography, synthwave),
+and preserves native resolution.
 """
 
 from typing import Tuple, Optional
@@ -9,6 +10,12 @@ import io
 from PIL import Image, ImageFilter, ImageDraw, ImageOps
 import numpy as np
 from theme_engine.palette import ResolvedThemePalette
+from theme_engine.procedural_wallpapers import (
+    generate_procedural_bokeh,
+    generate_procedural_waves,
+    generate_procedural_topography,
+    generate_procedural_synthwave
+)
 
 
 def generate_wallpaper(
@@ -20,22 +27,57 @@ def generate_wallpaper(
     focus: str = "center"
 ) -> Image.Image:
     """
-    Generate wallpaper with customizable crop focus (top/center/bottom).
-    - If width/height are specified (e.g. for preview cards), crops/fits cleanly.
-    - If width/height are None (e.g. for phone export), preserves 100% native resolution and sharpness.
+    Generate wallpaper with customizable crop focus and procedural styles.
     """
+    target_w = width or 1080
+    target_h = height or 2400
+
+    # 1. Procedural Patterns
+    if mode == "bokeh":
+        return generate_procedural_bokeh(
+            target_w, target_h,
+            color1=palette.primary_accent,
+            color2=palette.secondary_accent,
+            bg_color=palette.bg_color
+        )
+    elif mode == "waves":
+        return generate_procedural_waves(
+            target_w, target_h,
+            color1=palette.primary_accent,
+            color2=palette.secondary_accent,
+            bg_color=palette.bg_color
+        )
+    elif mode == "topography":
+        return generate_procedural_topography(
+            target_w, target_h,
+            stroke_color=palette.primary_accent,
+            bg_color=palette.bg_color
+        )
+    elif mode == "synthwave":
+        return generate_procedural_synthwave(
+            target_w, target_h,
+            neon_color=palette.primary_accent,
+            sun_color=palette.secondary_accent,
+            bg_color=palette.bg_color
+        )
+    elif mode == "gradient":
+        return create_smooth_gradient(
+            target_w, target_h,
+            color1=palette.primary_accent,
+            color2=palette.secondary_accent,
+            color3=palette.bg_color,
+            is_dark=palette.mode in ("dark", "amoled")
+        )
+    elif mode == "solid" or base_image is None:
+        return Image.new("RGB", (target_w, target_h), palette.bg_color)
+
+    # 2. Image-Based Wallpapers
     centering_map = {
         "center": (0.5, 0.5),
         "top": (0.5, 0.05),
         "bottom": (0.5, 0.95)
     }
     centering = centering_map.get(focus, (0.5, 0.5))
-
-    if base_image is None or mode == "solid":
-        w = width or 1080
-        h = height or 2400
-        return Image.new("RGB", (w, h), palette.bg_color)
-
     img = base_image.convert("RGB")
 
     # If explicit target canvas is requested (like preview card 800x690)
@@ -70,14 +112,6 @@ def generate_wallpaper(
             alpha = 0.35 if palette.mode in ("dark", "amoled") else 0.20
             overlay = Image.new("RGB", (width, height), overlay_color)
             return Image.blend(blurred, overlay, alpha)
-        elif mode == "gradient":
-            return create_smooth_gradient(
-                width, height,
-                color1=palette.primary_accent,
-                color2=palette.secondary_accent,
-                color3=palette.bg_color,
-                is_dark=palette.mode in ("dark", "amoled")
-            )
 
     # For device export (Android / Desktop): Preserve full native resolution & 100% sharpness!
     if mode == "original":
@@ -96,15 +130,6 @@ def generate_wallpaper(
         overlay = Image.new("RGB", img.size, overlay_color)
         return Image.blend(blurred, overlay, alpha)
 
-    elif mode == "gradient":
-        return create_smooth_gradient(
-            1080, 2400,
-            color1=palette.primary_accent,
-            color2=palette.secondary_accent,
-            color3=palette.bg_color,
-            is_dark=palette.mode in ("dark", "amoled")
-        )
-
     return img.copy()
 
 
@@ -121,7 +146,6 @@ def create_smooth_gradient(
     """
     sw, sh = 256, 455
     y, x = np.mgrid[0:sh, 0:sw]
-    
     diag = (x / sw * 0.6 + y / sh * 0.4)
     
     if is_dark:
