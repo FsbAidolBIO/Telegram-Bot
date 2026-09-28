@@ -1,10 +1,12 @@
 """
 Theme Palette generator and color logic for Telegram themes.
-Handles mode switching (Dark, Light, AMOLED), chromatic chat atmosphere, and bubble styling.
+Handles mode switching (Dark, Light, AMOLED), chromatic chat atmosphere, bubble styling,
+wallpaper focus, and hue rotation.
 """
 
 from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass, field
+import colorsys
 from theme_engine.color_extractor import (
     ExtractedColor,
     rgb_to_hex,
@@ -17,6 +19,16 @@ from theme_engine.color_extractor import (
 )
 
 
+def shift_hue(rgb: Tuple[int, int, int], degrees: int) -> Tuple[int, int, int]:
+    """Shift hue of RGB color by degrees."""
+    if degrees == 0:
+        return rgb
+    h, l, s = colorsys.rgb_to_hls(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+    new_h = (h + degrees / 360.0) % 1.0
+    nr, ng, nb = colorsys.hls_to_rgb(new_h, l, s)
+    return (int(nr * 255), int(ng * 255), int(nb * 255))
+
+
 @dataclass
 class ThemeConfig:
     """Settings selected by user for theme generation."""
@@ -26,6 +38,8 @@ class ThemeConfig:
     bubble_style: str = "vibrant"   # "vibrant", "dual", "soft", "glass", "minimal"
     chat_tint: str = "rich"         # "rich" (22%), "medium" (14%), "subtle" (6%), "clean" (0%)
     wallpaper_mode: str = "original"# "original", "dimmed", "blurred", "gradient", "solid"
+    wallpaper_focus: str = "center" # "center", "top", "bottom"
+    hue_shift_deg: int = 0          # 0 to 330 deg
     brightness_offset: int = 0      # -30 to +30 percent
     contrast_boost: bool = False
     custom_accent_hex: Optional[str] = None
@@ -41,6 +55,16 @@ class ThemeConfig:
         next_idx = (wallpapers.index(self.wallpaper_mode) + 1) % len(wallpapers) if self.wallpaper_mode in wallpapers else 0
         self.wallpaper_mode = wallpapers[next_idx]
         return self.wallpaper_mode
+
+    def cycle_focus(self) -> str:
+        foci = ["center", "top", "bottom"]
+        next_idx = (foci.index(self.wallpaper_focus) + 1) % len(foci) if self.wallpaper_focus in foci else 0
+        self.wallpaper_focus = foci[next_idx]
+        return self.wallpaper_focus
+
+    def cycle_hue(self) -> int:
+        self.hue_shift_deg = (self.hue_shift_deg + 30) % 360
+        return self.hue_shift_deg
 
     def cycle_bubble(self) -> str:
         bubbles = ["vibrant", "dual", "soft", "glass", "minimal"]
@@ -108,7 +132,6 @@ class ResolvedThemePalette:
     input_bar_text: Tuple[int, int, int]
     input_bar_hint: Tuple[int, int, int]
 
-    # Hex helpers
     @property
     def hex_bg(self) -> str:
         return rgb_to_hex(*self.bg_color)
@@ -166,8 +189,13 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
 
     sec_i = (config.accent_idx + 1) % len(vibrant_sorted)
     secondary_raw = vibrant_sorted[sec_i].rgb
-
     base_raw = extracted_colors[0].rgb
+
+    # Apply Hue Shift if active
+    if config.hue_shift_deg != 0:
+        primary_raw = shift_hue(primary_raw, config.hue_shift_deg)
+        secondary_raw = shift_hue(secondary_raw, config.hue_shift_deg)
+        base_raw = shift_hue(base_raw, config.hue_shift_deg)
 
     tint_factors = {
         "rich": 0.22,
@@ -226,7 +254,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
 
     elif mode == "dark":
         tinted_dark = blend_colors((18, 22, 28), base_raw, tint_factor)
-        
         l_bg = max(0.06, min(0.28, 0.11 + b_offset))
         bg_color = adjust_lightness(tinted_dark, l_bg)
         
@@ -278,7 +305,6 @@ def build_palette(extracted_colors: List[ExtractedColor], config: ThemeConfig, i
 
     else:
         tinted_light = blend_colors((242, 245, 250), base_raw, tint_factor * 0.7)
-        
         l_bg = max(0.88, min(0.98, 0.95 + b_offset))
         bg_color = adjust_lightness(tinted_light, l_bg)
         

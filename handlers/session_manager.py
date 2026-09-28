@@ -24,6 +24,7 @@ class UserThemeSession:
     """Stores the active theme customization state for a user."""
     def __init__(self, user_id: int, image_bytes: bytes):
         self.user_id = user_id
+        self.image_bytes = image_bytes
         self.created_at = time.time()
         self.last_accessed = time.time()
         
@@ -59,7 +60,8 @@ class UserThemeSession:
             palette,
             mode=self.config.wallpaper_mode,
             width=width,
-            height=height
+            height=height,
+            focus=self.config.wallpaper_focus
         )
 
     def set_custom_accent(self, hex_code: str) -> bool:

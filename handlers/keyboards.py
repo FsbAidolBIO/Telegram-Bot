@@ -32,6 +32,13 @@ def get_theme_editor_keyboard(
     }
     wall_text = wallpaper_labels.get(config.wallpaper_mode, "🖼 Обои")
 
+    focus_labels = {
+        "center": "🎯 Фокус: Центр",
+        "top": "🎯 Фокус: Верх",
+        "bottom": "🎯 Фокус: Низ"
+    }
+    focus_text = focus_labels.get(config.wallpaper_focus, "🎯 Фокус")
+
     bubble_labels = {
         "vibrant": "💬 Неон/Акцент",
         "dual": "🌈 Двойной цвет",
@@ -49,6 +56,8 @@ def get_theme_editor_keyboard(
     }
     tint_text = tint_labels.get(config.chat_tint, "🌌 Атмосфера")
 
+    hue_text = f"🌈 Спектр ({config.hue_shift_deg}°)" if config.hue_shift_deg != 0 else "🌈 Спектр (+30°)"
+
     keyboard = [
         # Row 1: Mode & Wallpaper
         [
@@ -60,14 +69,19 @@ def get_theme_editor_keyboard(
             InlineKeyboardButton(text=f"{bubble_text}", callback_data="cycle_bubble"),
             InlineKeyboardButton(text=f"{tint_text}", callback_data="cycle_chat_tint")
         ],
-        # Row 3: Brightness fine-tuning
+        # Row 3: Focus & Hue Shift
+        [
+            InlineKeyboardButton(text=focus_text, callback_data="cycle_focus"),
+            InlineKeyboardButton(text=hue_text, callback_data="cycle_hue")
+        ],
+        # Row 4: Brightness fine-tuning
         [
             InlineKeyboardButton(text="➖ Темнее (-10%)", callback_data="brightness_minus"),
             InlineKeyboardButton(text="➕ Светлее (+10%)", callback_data="brightness_plus")
         ],
     ]
 
-    # Row 4: Direct Interactive Color Palette Grid (Top 4 vibrant colors)
+    # Row 5: Direct Interactive Color Palette Grid (Top 4 vibrant colors)
     color_buttons = []
     for i, col in enumerate(extracted_colors[:4]):
         is_active = (config.custom_accent_hex is None and config.accent_idx == i)
@@ -80,13 +94,13 @@ def get_theme_editor_keyboard(
         if len(color_buttons) > 2:
             keyboard.append(color_buttons[2:4])
 
-    # Row 5: Palette Picker & Palette Card
+    # Row 6: Palette Picker & Palette Card
     keyboard.append([
         InlineKeyboardButton(text="🎨 Все цвета палитры", callback_data="open_palette_picker"),
         InlineKeyboardButton(text="📊 Карточка палитры (PNG)", callback_data="download_palette_card")
     ])
 
-    # Row 6: Primary download buttons
+    # Row 7: Primary download buttons
     keyboard.append([
         InlineKeyboardButton(text="🤖 Скачать для Android (.attheme)", callback_data="download_android")
     ])
@@ -94,7 +108,7 @@ def get_theme_editor_keyboard(
         InlineKeyboardButton(text="💻 Скачать для ПК (.tdesktop-theme)", callback_data="download_desktop")
     ])
     
-    # Row 7: All-in-one pack & Reset
+    # Row 8: All-in-one pack & Save & Reset
     keyboard.append([
         InlineKeyboardButton(text="📦 Полный ZIP-архив", callback_data="download_all_zip"),
         InlineKeyboardButton(text="🔄 Сброс", callback_data="reset_settings")

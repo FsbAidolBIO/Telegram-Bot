@@ -41,13 +41,16 @@ async def update_theme_view(query: CallbackQuery, session):
     }
     tint_name = tint_labels.get(session.config.chat_tint, "Обычная")
 
+    focus_names = {"center": "По центру", "top": "Сверху", "bottom": "Снизу"}
+    focus_str = focus_names.get(session.config.wallpaper_focus, "По центру")
+
     caption = (
         "✨ <b>Настройка темы обновлена!</b>\n\n"
         f"• <b>Режим:</b> {session.config.mode.upper()}\n"
         f"• <b>Основной акцент:</b> <code>{palette.hex_primary_accent.upper()}</code>\n"
         f"• <b>Второй цвет:</b> <code>{palette.hex_secondary_accent.upper()}</code>\n"
         f"• <b>Фон чата:</b> <code>{palette.hex_bg.upper()}</code>\n"
-        f"• <b>Обои:</b> {session.config.wallpaper_mode}\n"
+        f"• <b>Обои:</b> {session.config.wallpaper_mode} ({focus_str})\n"
         f"• <b>Стиль сообщений:</b> {session.config.bubble_style}\n"
         f"• <b>Атмосфера чата:</b> {tint_name}\n\n"
         "🎛 <i>Выберите цвет или параметр на кнопках ниже:</i>"
@@ -100,6 +103,26 @@ async def cb_open_palette_picker(query: CallbackQuery):
     except Exception as e:
         logger.warning("Failed to edit caption for color picker: %s", e)
     await query.answer()
+
+
+@router.callback_query(F.data == "cycle_focus")
+async def cb_cycle_focus(query: CallbackQuery):
+    session = session_manager.get_session(query.from_user.id)
+    if not session:
+        await query.answer("⚠️ Сессия истекла.", show_alert=True)
+        return
+    session.config.cycle_focus()
+    await update_theme_view(query, session)
+
+
+@router.callback_query(F.data == "cycle_hue")
+async def cb_cycle_hue(query: CallbackQuery):
+    session = session_manager.get_session(query.from_user.id)
+    if not session:
+        await query.answer("⚠️ Сессия истекла.", show_alert=True)
+        return
+    session.config.cycle_hue()
+    await update_theme_view(query, session)
 
 
 @router.callback_query(F.data == "cycle_chat_tint")
@@ -175,6 +198,8 @@ async def cb_reset_settings(query: CallbackQuery):
     session.config.bubble_style = "vibrant"
     session.config.chat_tint = "rich"
     session.config.wallpaper_mode = "original"
+    session.config.wallpaper_focus = "center"
+    session.config.hue_shift_deg = 0
     session.config.brightness_offset = 0
     session.config.custom_accent_hex = None
     await update_theme_view(query, session)

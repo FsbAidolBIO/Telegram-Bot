@@ -1,7 +1,7 @@
 """
 Wallpaper processing and generation module for Telegram themes.
-Provides ultra-sharp lossless wallpaper rendering (subsampling=0, quality=98)
-and preserves native resolution to prevent blurriness and distortion on Android and Desktop.
+Provides ultra-sharp lossless wallpaper rendering (subsampling=0, quality=98),
+focal point cropping (top/center/bottom), and preserves native resolution.
 """
 
 from typing import Tuple, Optional
@@ -16,13 +16,21 @@ def generate_wallpaper(
     palette: ResolvedThemePalette,
     mode: str = "original",
     width: Optional[int] = None,
-    height: Optional[int] = None
+    height: Optional[int] = None,
+    focus: str = "center"
 ) -> Image.Image:
     """
-    Generate wallpaper.
+    Generate wallpaper with customizable crop focus (top/center/bottom).
     - If width/height are specified (e.g. for preview cards), crops/fits cleanly.
     - If width/height are None (e.g. for phone export), preserves 100% native resolution and sharpness.
     """
+    centering_map = {
+        "center": (0.5, 0.5),
+        "top": (0.5, 0.05),
+        "bottom": (0.5, 0.95)
+    }
+    centering = centering_map.get(focus, (0.5, 0.5))
+
     if base_image is None or mode == "solid":
         w = width or 1080
         h = height or 2400
@@ -37,14 +45,14 @@ def generate_wallpaper(
                 img,
                 (width, height),
                 method=Image.Resampling.LANCZOS,
-                centering=(0.5, 0.5)
+                centering=centering
             )
         elif mode == "dimmed":
             cropped = ImageOps.fit(
                 img,
                 (width, height),
                 method=Image.Resampling.LANCZOS,
-                centering=(0.5, 0.5)
+                centering=centering
             )
             overlay_color = (0, 0, 0) if palette.mode in ("dark", "amoled") else (255, 255, 255)
             alpha = 0.35 if palette.mode in ("dark", "amoled") else 0.25
@@ -55,7 +63,7 @@ def generate_wallpaper(
                 img,
                 (width, height),
                 method=Image.Resampling.LANCZOS,
-                centering=(0.5, 0.5)
+                centering=centering
             )
             blurred = cropped.filter(ImageFilter.GaussianBlur(radius=28))
             overlay_color = palette.bg_color
@@ -140,7 +148,6 @@ def get_wallpaper_jpeg_bytes(wallpaper_img: Image.Image, quality: int = 98, subs
     Eliminates color bleeding, pixel smearing, and compression blur.
     """
     bio = io.BytesIO()
-    # Save with 4:4:4 full chroma sampling and 98% quality
     wallpaper_img.save(
         bio,
         format="JPEG",
