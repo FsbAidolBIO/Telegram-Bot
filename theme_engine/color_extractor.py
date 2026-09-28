@@ -1,0 +1,208 @@
+"""
+Color extraction module for Telegram themes.
+Extracts dominant colors, vibrant accents, and creates harmonious color schemes.
+"""
+
+from typing import List, Tuple, Dict, Any, Optional
+import colorsys
+import io
+from PIL import Image
+import numpy as np
+
+
+def rgb_to_hex(r: int, g: int, b: int) -> str:
+    """Convert RGB integers (0-255) to hex string #RRGGBB."""
+    return f"#{int(r):02x}{int(g):02x}{int(b):02x}"
+
+
+def hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
+    """Convert hex string (#RRGGBB or RRGGBB) to (r, g, b) tuple."""
+    hex_str = hex_str.strip().lstrip("#")
+    if len(hex_str) == 3:
+        hex_str = "".join(c * 2 for c in hex_str)
+    elif len(hex_str) == 8:  # AARRGGBB or RRGGBBAA
+        hex_str = hex_str[2:8]
+    elif len(hex_str) != 6:
+        # Fallback if invalid hex length
+        return (42, 114, 212)
+    try:
+        r = int(hex_str[0:2], 16)
+        g = int(hex_str[2:4], 16)
+        b = int(hex_str[4:6], 16)
+        return (r, g, b)
+    except ValueError:
+        return (42, 114, 212)
+
+
+def is_valid_hex(hex_str: str) -> bool:
+    """Check if string is a valid hex color code."""
+    cleaned = hex_str.strip().lstrip("#")
+    if len(cleaned) not in (3, 6, 8):
+        return False
+    return all(c in "0123456789abcdefABCDEF" for c in cleaned)
+
+
+def get_luminance(r: int, g: int, b: int) -> float:
+    """Calculate relative perceived luminance (0.0 to 1.0)."""
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+
+
+def get_contrast_ratio(rgb1: Tuple[int, int, int], rgb2: Tuple[int, int, int]) -> float:
+    """Calculate WCAG contrast ratio between two RGB colors (1.0 to 21.0)."""
+    l1 = get_luminance(*rgb1) + 0.05
+    l2 = get_luminance(*rgb2) + 0.05
+    return max(l1, l2) / min(l1, l2)
+
+
+def get_best_text_color(bg_rgb: Tuple[int, int, int]) -> Tuple[int, int, int]:
+    """Return pure white or near black text for optimal readability."""
+    lum = get_luminance(*bg_rgb)
+    return (255, 255, 255) if lum < 0.52 else (20, 20, 24)
+
+
+def color_distance(rgb1: Tuple[int, int, int], rgb2: Tuple[int, int, int]) -> float:
+    """Calculate Euclidean distance between two colors in RGB space."""
+    return (
+        (rgb1[0] - rgb2[0]) ** 2 +
+        (rgb1[1] - rgb2[1]) ** 2 +
+        (rgb1[2] - rgb2[2]) ** 2
+    ) ** 0.5
+
+
+def blend_colors(rgb1: Tuple[int, int, int], rgb2: Tuple[int, int, int], factor: float) -> Tuple[int, int, int]:
+    """Blend rgb1 with rgb2 by factor (0.0 = rgb1, 1.0 = rgb2)."""
+    factor = max(0.0, min(1.0, factor))
+    return (
+        int(rgb1[0] * (1 - factor) + rgb2[0] * factor),
+        int(rgb1[1] * (1 - factor) + rgb2[1] * factor),
+        int(rgb1[2] * (1 - factor) + rgb2[2] * factor)
+    )
+
+
+def adjust_lightness(rgb: Tuple[int, int, int], target_l: float) -> Tuple[int, int, int]:
+    """Adjust lightness of an RGB color to target_l (0.0 to 1.0) in HLS space."""
+    h, l, s = colorsys.rgb_to_hls(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+    target_l = max(0.0, min(1.0, target_l))
+    nr, ng, nb = colorsys.hls_to_rgb(h, target_l, s)
+    return (int(nr * 255), int(ng * 255), int(nb * 255))
+
+
+def adjust_saturation(rgb: Tuple[int, int, int], factor: float) -> Tuple[int, int, int]:
+    """Multiply saturation of an RGB color by factor."""
+    h, l, s = colorsys.rgb_to_hls(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
+    ns = max(0.0, min(1.0, s * factor))
+    nr, ng, nb = colorsys.hls_to_rgb(h, l, ns)
+    return (int(nr * 255), int(ng * 255), int(nb * 255))
+
+
+def generate_harmonic_color(base_rgb: Tuple[int, int, int], hue_shift_degrees: float) -> Tuple[int, int, int]:
+    """Generate a harmonic color by shifting hue."""
+    h, l, s = colorsys.rgb_to_hls(base_rgb[0] / 255.0, base_rgb[1] / 255.0, base_rgb[2] / 255.0)
+    new_h = (h + hue_shift_degrees / 360.0) % 1.0
+    new_s = max(0.5, s)
+    new_l = max(0.4, min(0.65, l))
+    nr, ng, nb = colorsys.hls_to_rgb(new_h, new_l, new_s)
+    return (int(nr * 255), int(ng * 255), int(nb * 255))
+
+
+class ExtractedColor:
+    """Represents an extracted color with metadata."""
+    def __init__(self, rgb: Tuple[int, int, int], count: int = 1):
+        self.rgb = rgb
+        self.r, self.g, self.b = rgb
+        self.hex = rgb_to_hex(self.r, self.g, self.b)
+        self.count = count
+        
+        # HLS values
+        self.h, self.l, self.s = colorsys.rgb_to_hls(self.r / 255.0, self.g / 255.0, self.b / 255.0)
+        self.luminance = get_luminance(self.r, self.g, self.b)
+        
+        # Vibrancy score: high saturation + moderate lightness is most vibrant
+        lightness_penalty = abs(self.l - 0.5) * 1.5
+        self.vibrancy = self.s * max(0.1, 1.0 - lightness_penalty)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "hex": self.hex,
+            "rgb": [self.r, self.g, self.b],
+            "vibrancy": round(self.vibrancy, 3),
+            "luminance": round(self.luminance, 3),
+            "count": self.count
+        }
+
+
+def extract_palette_from_image(image: Image.Image, num_colors: int = 8) -> List[ExtractedColor]:
+    """
+    Extract a clean, distinct palette from a PIL Image using quantization and clustering.
+    If the image has low color variety (monochrome/grayscale), generates harmonic colors.
+    """
+    # Resize image to a thumbnail for performance & noise smoothing
+    thumb = image.convert("RGB")
+    thumb.thumbnail((200, 200), Image.Resampling.BILINEAR)
+    
+    # Use adaptive quantization
+    quantized = thumb.quantize(colors=32, method=Image.Quantize.MEDIANCUT)
+    palette_data = quantized.getpalette()[: 32 * 3]
+    color_counts = quantized.getcolors() or []
+    
+    colors_raw: List[ExtractedColor] = []
+    for count, idx in color_counts:
+        r = palette_data[idx * 3]
+        g = palette_data[idx * 3 + 1]
+        b = palette_data[idx * 3 + 2]
+        colors_raw.append(ExtractedColor((r, g, b), count=count))
+    
+    if not colors_raw:
+        # Fallback to default pleasant palette
+        default_hexes = ["#2A72D4", "#5EB5F7", "#8E52EA", "#E5484D", "#30A46C", "#F76808", "#1E232A", "#FFFFFF"]
+        return [ExtractedColor(hex_to_rgb(h)) for h in default_hexes]
+
+    # Sort raw colors by frequency
+    colors_raw.sort(key=lambda c: c.count, reverse=True)
+    
+    # Filter out near duplicates (merge similar colors)
+    distinct_colors: List[ExtractedColor] = []
+    min_distance = 28.0  # Threshold in RGB space
+    
+    for color in colors_raw:
+        if not distinct_colors:
+            distinct_colors.append(color)
+            continue
+        
+        # Check distance to all already selected
+        is_distinct = True
+        for selected in distinct_colors:
+            if color_distance(color.rgb, selected.rgb) < min_distance:
+                is_distinct = False
+                break
+        
+        if is_distinct:
+            distinct_colors.append(color)
+            if len(distinct_colors) >= num_colors:
+                break
+                
+    # If the image was monochrome/single-toned and yielded fewer than 6 colors,
+    # generate rich harmonic complement and triadic colors!
+    if len(distinct_colors) < 6:
+        base_color = distinct_colors[0].rgb
+        shifts = [35.0, 75.0, 140.0, 180.0, 215.0, 290.0]
+        for shift in shifts:
+            h_rgb = generate_harmonic_color(base_color, shift)
+            new_c = ExtractedColor(h_rgb, count=1)
+            # check if distinct
+            if not any(color_distance(new_c.rgb, c.rgb) < 20.0 for c in distinct_colors):
+                distinct_colors.append(new_c)
+            if len(distinct_colors) >= num_colors:
+                break
+
+    return distinct_colors
+
+
+def detect_image_brightness(image: Image.Image) -> bool:
+    """
+    Returns True if the image is predominantly light, False if dark.
+    """
+    thumb = image.convert("L").resize((50, 50))
+    arr = np.array(thumb)
+    avg_brightness = np.mean(arr)
+    return avg_brightness > 128
